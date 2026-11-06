@@ -5,6 +5,7 @@ import PageHero from '../components/PageHero';
 import PackageCard, { PeriodToggle } from '../components/PackageCard';
 import { packages, addOns, formatMoney } from '../data/packages';
 import { useAuth } from '../context/AuthContext';
+import { choosePackage, planAction, actionLabel } from '../data/planActions';
 
 const matrix = [
   ['Transactions / month', '100', '500', '1,000'],
@@ -31,10 +32,7 @@ export default function Packages() {
   const navigate = useNavigate();
   const { setCart, user } = useAuth();
 
-  const choose = (pkg) => {
-    setCart({ type: 'package', packageId: pkg.id, months });
-    navigate('/cart');
-  };
+  const choose = (pkg) => choosePackage({ user, pkg, months, setCart, navigate });
 
   const buyAddon = (a) => {
     setCart({ type: 'addon', addonId: a.id, transactions: a.transactions, price: a.price });
@@ -56,7 +54,8 @@ export default function Packages() {
         <div className="container">
           <div className="pgrid">
             {packages.map((p) => (
-              <PackageCard key={p.id} pkg={p} months={months} onSelect={choose} />
+              <PackageCard key={p.id} pkg={p} months={months} onSelect={choose}
+                label={actionLabel(planAction(user?.subscription, p), p)} current={user?.subscription?.packageId === p.id} />
             ))}
           </div>
         </div>
@@ -129,7 +128,8 @@ export default function Packages() {
                 <li><Check size={16} /> Each sent invoice uses one transaction from your package.</li>
                 <li><Check size={16} /> When the limit is reached, new invoices pause until you renew, upgrade or buy an add-on.</li>
                 <li><Check size={16} /> Renewal starts a new period with a fresh transaction allowance.</li>
-                <li><Check size={16} /> Upgrades and downgrades apply from the next billing period.</li>
+                <li><Check size={16} /> Downgrades apply from the next billing period.</li>
+                <li><Check size={16} /> Upgrades apply immediately. You only pay the prorated difference for the days left.</li>
               </ul>
             </div>
             <div className="card">

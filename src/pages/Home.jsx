@@ -7,6 +7,7 @@ import {
 import PackageCard, { PeriodToggle } from '../components/PackageCard';
 import { packages } from '../data/packages';
 import { useAuth } from '../context/AuthContext';
+import { choosePackage, planAction, actionLabel } from '../data/planActions';
 import HowItWorks from '../components/HowItWorks';
 import StatsBand from '../components/StatsBand';
 
@@ -22,7 +23,7 @@ const pipeline = [
 const faqs = [
   { q: 'Who needs to issue e-invoices in the UAE?', a: 'In-scope UAE businesses must exchange invoices in Peppol PINT AE format through an Accredited Service Provider, which also reports Tax Data to the FTA.' },
   { q: 'What happens when I reach my limit?', a: 'New invoices pause and you can buy an add-on (same period), renew for a new period, or upgrade your package.' },
-  { q: 'Can I upgrade or downgrade later?', a: 'Yes. Changes apply from the next billing period. When downgrading, active users must fit the new limit.' },
+  { q: 'Can I upgrade or downgrade later?', a: 'Yes. Upgrades apply immediately and you pay only the prorated difference. Downgrades apply from the next billing period, and active users must fit the new limit.' },
   { q: 'Do add-ons extend my end date?', a: 'No. Add-on transactions are valid until your current package end date. Renew to extend the period.' },
   { q: 'Can I connect my ERP?', a: 'Yes, via REST API (OAuth2 + API key) with SDKs for .NET, Java, Python and PHP, or ERP connectors on Platinum.' },
   { q: 'Can I request a refund?', a: 'Yes, from your subscription page. After approval it is refunded via Stripe and the package is locked.' },
@@ -30,13 +31,10 @@ const faqs = [
 
 export default function Home() {
   const navigate = useNavigate();
-  const { setCart } = useAuth();
+  const { setCart, user } = useAuth();
   const [months, setMonths] = useState(1);
 
-  const choose = (pkg) => {
-    setCart({ type: 'package', packageId: pkg.id, months });
-    navigate('/cart');
-  };
+  const choose = (pkg) => choosePackage({ user, pkg, months, setCart, navigate });
 
   return (
     <>
@@ -57,7 +55,8 @@ export default function Home() {
       <section className="pricing-overlap" id="packages">
         <div className="container">
           <div className="pgrid">
-            {packages.map((p) => <PackageCard key={p.id} pkg={p} months={months} onSelect={choose} />)}
+            {packages.map((p) => <PackageCard key={p.id} pkg={p} months={months} onSelect={choose}
+                label={actionLabel(planAction(user?.subscription, p), p)} current={user?.subscription?.packageId === p.id} />)}
           </div>
           <div className="extras">
             <span className="xchip" style={{ '--c': '#10b981' }}><i><PackagePlus size={14} /></i> Add-ons from <b>AED 50</b></span>

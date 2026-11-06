@@ -13,14 +13,15 @@ export function PeriodToggle({ months, onChange, dark = false }) {
   );
 }
 
-export default function PackageCard({ pkg, months = 1, onSelect }) {
+export default function PackageCard({ pkg, months = 1, onSelect, label, current }) {
   const total = periodPrice(pkg, months);
   const full = pkg.price * months;
   return (
-    <div className={`pcard ${pkg.popular ? 'pcard-pop' : ''}`}>
+    <div className={`pcard ${pkg.popular ? 'pcard-pop' : ''} ${current ? 'pcard-is-current' : ''}`}>
       <div className="pcard-top">
         <h3>{pkg.name}</h3>
-        {pkg.popular && <span className="pcard-tag"><Sparkles size={13} /> Most popular</span>}
+        {current ? <span className="pcard-tag pcard-current">Your plan</span>
+          : pkg.popular && <span className="pcard-tag"><Sparkles size={13} /> Most popular</span>}
       </div>
       <p className="pcard-tagline">{pkg.tagline}</p>
 
@@ -39,7 +40,7 @@ export default function PackageCard({ pkg, months = 1, onSelect }) {
       </div>
 
       <button className={`btn btn-block ${pkg.popular ? 'btn-white' : 'btn-dark'}`} onClick={() => onSelect(pkg)}>
-        Get {pkg.name} <ArrowRight size={16} />
+        {label || `Get ${pkg.name}`} <ArrowRight size={16} />
       </button>
 
       <ul className="pcard-list">

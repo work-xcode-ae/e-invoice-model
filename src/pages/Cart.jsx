@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Trash2, Loader2, CheckCircle2, Lock, PackagePlus, FileText, AlertCircle } from 'lucide-react';
+import { ShoppingCart, Trash2, Loader2, CheckCircle2, Lock, PackagePlus, FileText, AlertCircle, ArrowUpCircle } from 'lucide-react';
 import PageHero from '../components/PageHero';
 import { useAuth } from '../context/AuthContext';
 import { getPackage, billingPeriods, periodPrice, formatMoney } from '../data/packages';
@@ -60,6 +60,8 @@ export default function Cart() {
   }
 
   const pkg = cart.type === 'package' ? getPackage(cart.packageId) : null;
+  const upTo = cart.type === 'upgrade' ? getPackage(cart.packageId) : null;
+  const isRenewal = pkg && user?.subscription?.status === 'Active' && user.subscription.packageId === pkg.id;
   const q = quote(cart);
 
   const pay = async () => {
@@ -74,6 +76,8 @@ export default function Cart() {
       refreshUser(res.user);
       setCart(null);
       if (cart.type === 'addon') navigate('/dashboard', { state: { flash: `${cart.transactions} transactions added to your package.` } });
+      else if (cart.type === 'upgrade') navigate('/dashboard?tab=plan', { state: { flash: `You're now on the ${res.user.subscription.packageName} plan. New limits apply immediately.` } });
+      else if (res.renewed) navigate('/dashboard?tab=plan', { state: { flash: `Renewed. Your plan now runs until ${fmtDate(res.user.subscription.endDate)}.` } });
       else setReceipt(res);
     } catch (e) {
       setError(e.message);
@@ -94,11 +98,18 @@ export default function Cart() {
             </div>
 
             <div className="flex gap-2 items-center" style={{ padding: '16px 0', borderTop: '1px solid var(--line)' }}>
-              <div className="icon-box purple mb-0">{pkg ? <FileText size={22} /> : <PackagePlus size={22} />}</div>
+              <div className="icon-box purple mb-0">{upTo ? <ArrowUpCircle size={22} /> : pkg ? <FileText size={22} /> : <PackagePlus size={22} />}</div>
               <div style={{ flex: 1 }}>
-                {pkg ? (
+                {upTo ? (
                   <>
-                    <h4 className="mb-0">{pkg.name} Package</h4>
+                    <h4 className="mb-0">Upgrade: {user?.subscription?.packageName} → {upTo.name}</h4>
+                    <p className="muted mb-0" style={{ fontSize: 14 }}>
+                      Prorated for the {cart.remainingDays} days left · {upTo.transactions.toLocaleString()} invoices/mo · {upTo.users} users · applies immediately
+                    </p>
+                  </>
+                ) : pkg ? (
+                  <>
+                    <h4 className="mb-0">{isRenewal ? `Renew ${pkg.name}` : `${pkg.name} Package`}</h4>
                     <p className="muted mb-0" style={{ fontSize: 14 }}>
                       {(pkg.transactions * cart.months).toLocaleString()} transactions · {pkg.users} users · {pkg.support}
                     </p>

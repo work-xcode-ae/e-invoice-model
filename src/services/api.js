@@ -99,12 +99,26 @@ export function quote(cartItem) {
   let subtotal = 0;
   if (cartItem.type === 'package') {
     subtotal = periodPrice(getPackage(cartItem.packageId), cartItem.months);
-  } else if (cartItem.type === 'addon') {
+  } else if (cartItem.type === 'addon' || cartItem.type === 'upgrade') {
     subtotal = cartItem.price;
   }
   const vat = +(subtotal * VAT_RATE).toFixed(2);
   return { subtotal, vat, total: +(subtotal + vat).toFixed(2) };
 }
+
+const recordPayment = (user, item, q, paymentId) => [
+  ...(user.payments || []),
+  {
+    id: paymentId,
+    date: new Date().toISOString(),
+    description:
+      item.type === 'package' ? `${getPackage(item.packageId).name} package · ${item.months} month(s)`
+      : item.type === 'addon' ? `Add-on · +${item.transactions} transactions`
+      : `Upgrade to ${getPackage(item.packageId).name}`,
+    total: q.total,
+    status: 'Paid',
+  },
+];
 
 export async function checkout(userId, cartItem) {
   await delay(1200); // simulate Stripe payment
@@ -112,9 +126,24 @@ export async function checkout(userId, cartItem) {
   const user = users.find((u) => u.id === userId);
   const q = quote(cartItem);
   const paymentId = `pi_${Math.random().toString(36).slice(2, 12)}`;
+  const payments = recordPayment(user, cartItem, q, paymentId);
+  const current = user.subscription;
 
   if (cartItem.type === 'package') {
     const pkg = getPackage(cartItem.packageId);
+    // Renewal of the same active package: extend the period and add a new allowance.
+    if (current && current.status === 'Active' && current.packageId === pkg.id) {
+      const end = new Date(current.endDate);
+      end.setMonth(end.getMonth() + cartItem.months);
+      const subscription = {
+        ...current,
+        months: current.months + cartItem.months,
+        endDate: end.toISOString(),
+        transactionsLimit: current.transactionsLimit + pkg.transactions * cartItem.months,
+        pendingChange: null,
+      };
+      return { user: updateUser(userId, { subscription, payments }), paymentId, renewed: true, ...q };
+    }
     const start = new Date();
     const end = new Date(start);
     end.setMonth(end.getMonth() + cartItem.months);
@@ -124,25 +153,128 @@ export async function checkout(userId, cartItem) {
       months: cartItem.months,
       transactionsLimit: pkg.transactions * cartItem.months,
       transactionsUsed: 0,
+      addonTransactions: 0,
       usersLimit: pkg.users,
       startDate: start.toISOString(),
       endDate: end.toISOString(),
       status: 'Active',
       paymentId,
       total: q.total,
+      pendingChange: null,
     };
-    return { user: updateUser(userId, { subscription }), paymentId, ...q };
+    // Demo activity so the dashboard statistics have something to show.
+    const activity = buildDemoActivity(user.id, Math.round(subscription.transactionsLimit * 0.42));
+    subscription.transactionsUsed = activity.totals.sent;
+    return { user: updateUser(userId, { subscription, payments, activity }), paymentId, ...q };
   }
 
   if (cartItem.type === 'addon') {
-    if (!user.subscription) throw new Error('You need an active package before buying add-ons.');
+    if (!current) throw new Error('You need an active package before buying add-ons.');
     const subscription = {
-      ...user.subscription,
-      transactionsLimit: user.subscription.transactionsLimit + cartItem.transactions,
+      ...current,
+      transactionsLimit: current.transactionsLimit + cartItem.transactions,
+      addonTransactions: (current.addonTransactions || 0) + cartItem.transactions,
     };
-    return { user: updateUser(userId, { subscription }), paymentId, ...q };
+    return { user: updateUser(userId, { subscription, payments }), paymentId, ...q };
+  }
+
+  if (cartItem.type === 'upgrade') {
+    if (!current) throw new Error('You need an active package before upgrading.');
+    const pkg = getPackage(cartItem.packageId);
+    const subscription = {
+      ...current,
+      packageId: pkg.id,
+      packageName: pkg.name,
+      usersLimit: pkg.users,
+      transactionsLimit: pkg.transactions * current.months + (current.addonTransactions || 0),
+      pendingChange: null,
+    };
+    return { user: updateUser(userId, { subscription, payments }), paymentId, upgraded: true, ...q };
   }
   throw new Error('Unknown cart item.');
+}
+
+// ---------- Plan changes ----------
+/** Prorated price to upgrade now: (new − old monthly price) × months × remaining share of the period. */
+export function upgradeQuote(subscription, toPackageId) {
+  const from = getPackage(subscription.packageId);
+  const to = getPackage(toPackageId);
+  const start = new Date(subscription.startDate).getTime();
+  const end = new Date(subscription.endDate).getTime();
+  const remaining = Math.max(0, Math.min(1, (end - Date.now()) / (end - start)));
+  const amount = Math.max(0, Math.round((to.price - from.price) * subscription.months * remaining));
+  return { amount, remainingDays: Math.ceil((end - Date.now()) / 86400000), remainingShare: remaining };
+}
+
+export async function scheduleDowngrade(userId, toPackageId) {
+  await delay(500);
+  const users = read(USERS_KEY, []);
+  const user = users.find((u) => u.id === userId);
+  const to = getPackage(toPackageId);
+  const activeUsers = 1 + (user.teamUsers || []).filter((m) => m.status === 'Active').length;
+  if (activeUsers > to.users) {
+    throw new Error(
+      `${to.name} allows ${to.users} users and you have ${activeUsers} active. Deactivate ${activeUsers - to.users} user(s) first.`
+    );
+  }
+  const subscription = {
+    ...user.subscription,
+    pendingChange: { packageId: to.id, packageName: to.name, effectiveDate: user.subscription.endDate },
+  };
+  return updateUser(userId, { subscription });
+}
+
+export async function cancelPendingChange(userId) {
+  await delay(300);
+  const users = read(USERS_KEY, []);
+  const user = users.find((u) => u.id === userId);
+  return updateUser(userId, { subscription: { ...user.subscription, pendingChange: null } });
+}
+
+// ---------- Demo statistics ----------
+function seeded(seedStr) {
+  let h = 2166136261;
+  for (let i = 0; i < seedStr.length; i++) h = Math.imul(h ^ seedStr.charCodeAt(i), 16777619);
+  return () => {
+    h += 0x6d2b79f5;
+    let t = h;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function buildDemoActivity(seed, targetSent) {
+  const rnd = seeded(seed);
+  const days = [];
+  const weights = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (13 - i));
+    const weekend = d.getDay() === 0 || d.getDay() === 6; // Sat/Sun lighter
+    return (weekend ? 0.35 : 1) * (0.6 + rnd() * 0.8);
+  });
+  const wSum = weights.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(); d.setDate(d.getDate() - (13 - i));
+    const sent = Math.round((weights[i] / wSum) * targetSent);
+    const failed = Math.round(sent * (0.01 + rnd() * 0.04));
+    days.push({ date: d.toISOString().slice(0, 10), sent, failed });
+  }
+  const sent = days.reduce((a, d) => a + d.sent, 0);
+  const failed = days.reduce((a, d) => a + d.failed, 0);
+  const customers = ['Al Noor LLC', 'Gulf Star Trading', 'Emirates Foods', 'Blue Wave Marine', 'Desert Rose Interiors', 'Falcon Logistics'];
+  const statuses = ['Success', 'Success', 'Success', 'Processing', 'Queued', 'Success', 'Failed'];
+  const recent = Array.from({ length: 6 }, (_, i) => ({
+    id: `INV-${1240 - i}`,
+    customer: customers[Math.floor(rnd() * customers.length)],
+    amount: Math.round(500 + rnd() * 12000),
+    status: statuses[i],
+    time: new Date(Date.now() - i * 37 * 60000).toISOString(),
+  }));
+  return {
+    days,
+    recent,
+    totals: { sent, failed, processing: 8, queued: 15 },
+  };
 }
 
 // ---------- Company & users ----------

@@ -61,6 +61,11 @@ export default function Navbar() {
               <ShoppingBag size={19} /><span className="count">1</span>
             </Link>
           )}
+          {isAuthenticated && (
+            <NavLink to="/dashboard" className={({ isActive }) => `nav-cta nav-dash ${isActive ? 'is-here' : ''}`}>
+              <LayoutDashboard size={16} /> Dashboard
+            </NavLink>
+          )}
           {isAuthenticated ? (
             <div className="user-menu" ref={menuRef}>
               <button className="user-trigger" onClick={() => setMenu((m) => !m)} aria-expanded={menu} aria-haspopup="menu">

@@ -2,16 +2,24 @@
 // fetch() calls to your backend (e.g. ASP.NET / Node) without touching the pages.
 // Data is kept in localStorage for demo purposes only — never store real passwords client-side.
 
-import { getPackage, periodPrice, VAT_RATE } from '../data/packages';
+import { getPackage, periodPrice, VAT_RATE, PRICES_INCLUDE_VAT } from '../data/packages';
 
-const USERS_KEY = 'mei_users';
-const SESSION_KEY = 'mei_session';
+export const USERS_KEY = 'mei_users';
+export const SESSION_KEY = 'mei_session';
 const MESSAGES_KEY = 'mei_messages';
 const REQUESTS_KEY = 'mei_requirements';
 
-const delay = (ms = 600) => new Promise((r) => setTimeout(r, ms));
+/** Error with an English template + values, so the UI can translate it (see i18n/errText). */
+export const fail = (key, vars) => {
+  const err = new Error(key.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] !== undefined ? vars[k] : m)));
+  err.key = key;
+  err.vars = vars;
+  return err;
+};
 
-const read = (key, fallback) => {
+export const delay = (ms = 600) => new Promise((r) => setTimeout(r, ms));
+
+export const read = (key, fallback) => {
   try {
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
@@ -19,22 +27,25 @@ const read = (key, fallback) => {
     return fallback;
   }
 };
-const write = (key, value) => {
+export const DB_EVENT = 'mei-db-change';
+export const write = (key, value) => {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
     /* storage unavailable */
   }
+  // Let open screens refresh (same tab). Other tabs get the native 'storage' event.
+  try { window.dispatchEvent(new CustomEvent(DB_EVENT, { detail: { key } })); } catch { /* ignore */ }
 };
 
-const publicUser = ({ password, ...u }) => u;
+export const publicUser = ({ password, ...u }) => ({ ...u, teamUsers: (u.teamUsers || []).map(({ password: _p, ...m }) => m) }); // eslint-disable-line no-unused-vars
 
 // ---------- Auth ----------
 export async function register({ fullName, email, phone, password }) {
   await delay();
   const users = read(USERS_KEY, []);
   const exists = users.some((u) => u.email.toLowerCase() === email.toLowerCase());
-  if (exists) throw new Error('An account with this email already exists.');
+  if (exists) throw fail('An account with this email already exists.');
   const user = {
     id: crypto.randomUUID(),
     fullName,
@@ -58,7 +69,19 @@ export async function login({ email, password, remember }) {
   await delay();
   const users = read(USERS_KEY, []);
   const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-  if (!user || user.password !== password) throw new Error('Invalid email or password.');
+  if (!user) {
+    // Team member of a company: signs in to the owner's company with their own role.
+    const owner = users.find((u) => (u.teamUsers || []).some((m) => m.email?.toLowerCase() === email.toLowerCase()));
+    const m = owner?.teamUsers.find((x) => x.email.toLowerCase() === email.toLowerCase());
+    if (!m || (m.password || 'Demo@2026') !== password) throw fail('Invalid email or password.');
+    if (m.status !== 'Active') throw fail('Your user is deactivated. Ask your company owner to activate it.');
+    if (owner.disabled) throw fail('This company is deactivated. Contact support.');
+    const role = m.role === 'User' ? 'Accountant' : m.role;
+    const session = { token: `demo-${owner.id}-${m.id}`, user: publicUser(owner), member: { id: m.id, name: m.name, email: m.email, role }, remember };
+    write(SESSION_KEY, session);
+    return session;
+  }
+  if (user.password !== password) throw fail('Invalid email or password.');
   const session = { token: `demo-${user.id}`, user: publicUser(user), remember };
   write(SESSION_KEY, session);
   return session;
@@ -66,7 +89,7 @@ export async function login({ email, password, remember }) {
 
 export async function forgotPassword(email) {
   await delay();
-  return { message: `If ${email} is registered, a reset link has been sent.` };
+  return { key: 'If {email} is registered, a reset link has been sent.', vars: { email } };
 }
 
 export function getSession() {
@@ -81,17 +104,26 @@ export function logout() {
   }
 }
 
-function updateUser(userId, patch) {
+export const getUsers = () => read(USERS_KEY, []);
+export const getUserById = (id) => getUsers().find((u) => u.id === id) || null;
+
+/** Patch one user. `patch` can be an object or a function (user) => partial. */
+export function updateUser(userId, patch) {
   const users = read(USERS_KEY, []);
   const idx = users.findIndex((u) => u.id === userId);
-  if (idx === -1) throw new Error('User not found.');
-  users[idx] = { ...users[idx], ...patch };
+  if (idx === -1) throw fail('User not found.');
+  const p = typeof patch === 'function' ? patch(users[idx]) : patch;
+  users[idx] = { ...users[idx], ...p };
   write(USERS_KEY, users);
-  const session = read(SESSION_KEY, null);
   const updated = publicUser(users[idx]);
-  if (session) write(SESSION_KEY, { ...session, user: updated });
+  // Only refresh the stored session when it belongs to this user (admins edit other accounts).
+  const session = read(SESSION_KEY, null);
+  if (session?.user?.id === userId) write(SESSION_KEY, { ...session, user: updated });
   return updated;
 }
+
+/** Replace the whole users list (bulk updates from the queue engine / admin). */
+export const saveUsers = (users) => write(USERS_KEY, users);
 
 // ---------- Subscription / checkout ----------
 export function quote(cartItem) {
@@ -102,20 +134,37 @@ export function quote(cartItem) {
   } else if (cartItem.type === 'addon' || cartItem.type === 'upgrade') {
     subtotal = cartItem.price;
   }
+  const rate = +(VAT_RATE * 100).toFixed(2);
+  if (PRICES_INCLUDE_VAT) {
+    // Prices already contain VAT: the total stays the same and VAT is taken out of it.
+    const net = +(subtotal / (1 + VAT_RATE)).toFixed(2);
+    return { subtotal: net, vat: +(subtotal - net).toFixed(2), total: subtotal, rate, included: true };
+  }
   const vat = +(subtotal * VAT_RATE).toFixed(2);
-  return { subtotal, vat, total: +(subtotal + vat).toFixed(2) };
+  return { subtotal, vat, total: +(subtotal + vat).toFixed(2), rate, included: false };
 }
+
+const paymentType = (user, item) => {
+  if (item.type === 'addon') return 'Add-on';
+  if (item.type === 'upgrade') return 'Upgrade';
+  return user.subscription && user.subscription.packageId === item.packageId ? 'Renewal' : 'New';
+};
 
 const recordPayment = (user, item, q, paymentId) => [
   ...(user.payments || []),
   {
     id: paymentId,
     date: new Date().toISOString(),
+    type: paymentType(user, item),
+    packageId: item.packageId || user.subscription?.packageId || null,
+    // English template + vars, translated when displayed.
     description:
-      item.type === 'package' ? `${getPackage(item.packageId).name} package · ${item.months} month(s)`
-      : item.type === 'addon' ? `Add-on · +${item.transactions} transactions`
-      : `Upgrade to ${getPackage(item.packageId).name}`,
+      item.type === 'package' ? { key: '{name} package · {months} month(s)', vars: { name: getPackage(item.packageId).name, months: item.months } }
+      : item.type === 'addon' ? { key: 'Add-on · +{n} transactions', vars: { n: item.transactions } }
+      : { key: 'Upgrade to {name}', vars: { name: getPackage(item.packageId).name } },
     total: q.total,
+    vat: q.vat,
+    vatRate: q.rate,
     status: 'Paid',
   },
 ];
@@ -169,7 +218,7 @@ export async function checkout(userId, cartItem) {
   }
 
   if (cartItem.type === 'addon') {
-    if (!current) throw new Error('You need an active package before buying add-ons.');
+    if (!current) throw fail('You need an active package before buying add-ons.');
     const subscription = {
       ...current,
       transactionsLimit: current.transactionsLimit + cartItem.transactions,
@@ -179,7 +228,7 @@ export async function checkout(userId, cartItem) {
   }
 
   if (cartItem.type === 'upgrade') {
-    if (!current) throw new Error('You need an active package before upgrading.');
+    if (!current) throw fail('You need an active package before upgrading.');
     const pkg = getPackage(cartItem.packageId);
     const subscription = {
       ...current,
@@ -191,7 +240,7 @@ export async function checkout(userId, cartItem) {
     };
     return { user: updateUser(userId, { subscription, payments }), paymentId, upgraded: true, ...q };
   }
-  throw new Error('Unknown cart item.');
+  throw fail('Unknown cart item.');
 }
 
 // ---------- Plan changes ----------
@@ -213,8 +262,9 @@ export async function scheduleDowngrade(userId, toPackageId) {
   const to = getPackage(toPackageId);
   const activeUsers = 1 + (user.teamUsers || []).filter((m) => m.status === 'Active').length;
   if (activeUsers > to.users) {
-    throw new Error(
-      `${to.name} allows ${to.users} users and you have ${activeUsers} active. Deactivate ${activeUsers - to.users} user(s) first.`
+    throw fail(
+      '{name} allows {max} users and you have {active} active. Deactivate {extra} user(s) first.',
+      { name: to.name, max: to.users, active: activeUsers, extra: activeUsers - to.users }
     );
   }
   const subscription = {
@@ -261,9 +311,9 @@ function buildDemoActivity(seed, targetSent) {
   }
   const sent = days.reduce((a, d) => a + d.sent, 0);
   const failed = days.reduce((a, d) => a + d.failed, 0);
-  const customers = ['Al Noor LLC', 'Gulf Star Trading', 'Emirates Foods', 'Blue Wave Marine', 'Desert Rose Interiors', 'Falcon Logistics'];
-  const statuses = ['Success', 'Success', 'Success', 'Processing', 'Queued', 'Success', 'Failed'];
-  const recent = Array.from({ length: 6 }, (_, i) => ({
+  const customers = ['Al Noor LLC', 'Gulf Star Trading', 'Emirates Foods', 'Blue Wave Marine', 'Desert Rose Interiors', 'Falcon Logistics', 'Oasis Medical Center', 'Palm Tech Solutions'];
+  const statuses = ['Success', 'Success', 'Processing', 'Success', 'Queued', 'Success', 'Failed', 'Success'];
+  const recent = Array.from({ length: 8 }, (_, i) => ({
     id: `INV-${1240 - i}`,
     customer: customers[Math.floor(rnd() * customers.length)],
     amount: Math.round(500 + rnd() * 12000),
@@ -288,12 +338,19 @@ export async function addTeamUser(userId, member) {
   const users = read(USERS_KEY, []);
   const owner = users.find((u) => u.id === userId);
   const limit = owner.subscription?.usersLimit ?? 0;
-  const current = 1 + (owner.teamUsers?.length || 0);
+  const current = 1 + (owner.teamUsers || []).filter((m) => m.status === 'Active').length;
   if (current >= limit) {
-    throw new Error(`Your package allows up to ${limit} users. Upgrade your package to add more.`);
+    throw fail('Your package allows up to {limit} users. Upgrade your package to add more.', { limit });
   }
-  const teamUsers = [...(owner.teamUsers || []), { id: crypto.randomUUID(), ...member, status: 'Active' }];
-  return updateUser(userId, { teamUsers });
+  const email = String(member.email || '').trim().toLowerCase();
+  if (users.some((u) => u.email.toLowerCase() === email || (u.teamUsers || []).some((m) => m.email?.toLowerCase() === email))) {
+    throw fail('A user with this email already exists.');
+  }
+  // Demo: a temporary password the owner passes on. A real backend emails an invitation link.
+  const tempPassword = `Mei-${Math.random().toString(36).slice(2, 7)}${Math.floor(10 + Math.random() * 89)}`;
+  const teamUsers = [...(owner.teamUsers || []), { id: crypto.randomUUID(), ...member, email, password: tempPassword, status: 'Active' }];
+  const updated = updateUser(userId, { teamUsers });
+  return { ...updated, _tempPassword: tempPassword };
 }
 
 // ---------- Contact & requirements ----------
@@ -303,7 +360,12 @@ export async function sendContactMessage(payload) {
   const ticket = `MSG-${String(list.length + 1001)}`;
   list.push({ ...payload, ticket, createdAt: new Date().toISOString() });
   write(MESSAGES_KEY, list);
-  return { ticket };
+  // Also lands in the system admin's support inbox.
+  try {
+    const { createTicket } = await import('./support');
+    const tk = createTicket({ name: payload.name || payload.fullName || '', email: payload.email || '', company: payload.company || '', subject: payload.subject || payload.topic || 'Website enquiry', category: ({ 'Technical support': 'Technical', 'API & integration': 'Integration / API', 'Billing & refunds': 'Billing', 'Onboarding / EmaraTax linking': 'Account' })[payload.topic] || 'Sales enquiry', message: payload.message || '-', source: 'Contact form' });
+    return { ticket: tk.id };
+  } catch { return { ticket }; }
 }
 
 export async function submitRequirement(payload) {
@@ -313,4 +375,62 @@ export async function submitRequirement(payload) {
   list.push({ ...payload, ref, status: 'Submitted', createdAt: new Date().toISOString() });
   write(REQUESTS_KEY, list);
   return { ref };
+}
+
+// ---------- Dummy data helpers ----------
+/** Sample activity for any user (deterministic per user, so it doesn't jump between visits). */
+export function getDemoActivity(seed, targetSent = 210) {
+  return buildDemoActivity(String(seed), targetSent);
+}
+
+/** Older accounts that bought a package before demo data existed get it filled in once. */
+export function ensureActivity(userId) {
+  const users = read(USERS_KEY, []);
+  const user = users.find((u) => u.id === userId);
+  if (!user || !user.subscription || user.activity) return null;
+  const activity = buildDemoActivity(user.id, Math.round(user.subscription.transactionsLimit * 0.42));
+  return updateUser(userId, { activity, subscription: { ...user.subscription, transactionsUsed: activity.totals.sent } });
+}
+
+export const DEMO_EMAIL = 'demo@modelfc.ae';
+export const DEMO_PASSWORD = 'Demo@2026';
+
+/** Creates a fully filled demo account (company, team, payments, statistics) if it doesn't exist yet. */
+export function seedDemoAccount() {
+  const users = read(USERS_KEY, []);
+  if (users.some((u) => u.email === DEMO_EMAIL)) return;
+  const pkg = getPackage('standard');
+  const start = new Date(); start.setDate(start.getDate() - 12);
+  const end = new Date(start); end.setMonth(end.getMonth() + 1);
+  const lastMonth = new Date(start); lastMonth.setMonth(lastMonth.getMonth() - 1);
+  const id = 'demo-user-0001';
+  const activity = buildDemoActivity(id, 300);
+  users.push({
+    id,
+    fullName: 'Hisham Ahmed',
+    email: DEMO_EMAIL,
+    phone: '+971 50 123 4567',
+    password: DEMO_PASSWORD, // demo only
+    role: 'Owner',
+    createdAt: lastMonth.toISOString(),
+    company: { name: 'ABC Trading LLC', tradeLicense: 'CN-1234567', trn: '100234567800003', emirate: 'Dubai', address: 'Office 1204, Bay Square, Business Bay', createdAt: lastMonth.toISOString() },
+    subscription: {
+      packageId: pkg.id, packageName: pkg.name, months: 1,
+      transactionsLimit: pkg.transactions + 100, transactionsUsed: activity.totals.sent, addonTransactions: 100,
+      usersLimit: pkg.users, startDate: start.toISOString(), endDate: end.toISOString(),
+      status: 'Active', paymentId: 'pi_demo00002', total: 105, pendingChange: null,
+    },
+    activity,
+    teamUsers: [
+      { id: 'tm-1', name: 'Sara Al Mansoori', email: 'sara@abctrading.ae', role: 'Accountant', status: 'Active' },
+      { id: 'tm-2', name: 'Omar Haddad', email: 'omar@abctrading.ae', role: 'Admin', status: 'Active' },
+      { id: 'tm-3', name: 'Priya Nair', email: 'priya@abctrading.ae', role: 'Viewer', status: 'Active' },
+    ],
+    payments: [
+      { id: 'pi_demo00001', date: lastMonth.toISOString(), description: { key: '{name} package · {months} month(s)', vars: { name: 'Standard', months: 1 } }, total: 105, status: 'Paid' },
+      { id: 'pi_demo00002', date: start.toISOString(), description: { key: '{name} package · {months} month(s)', vars: { name: 'Standard', months: 1 } }, total: 105, status: 'Paid' },
+      { id: 'pi_demo00003', date: new Date(Date.now() - 3 * 86400000).toISOString(), description: { key: 'Add-on · +{n} transactions', vars: { n: 100 } }, total: 94.5, status: 'Paid' },
+    ],
+  });
+  write(USERS_KEY, users);
 }

@@ -12,10 +12,14 @@ import Register from './pages/Register';
 import Cart from './pages/Cart';
 import Dashboard from './pages/Dashboard';
 import NotFound from './pages/NotFound';
+import { AdminLayout, AdminDashboard, AdminUsers } from './pages/admin/Admin';
+import AdminTax from './pages/admin/AdminTax';
+import { AdminOverview, AdminSales, AdminSupport, AdminNotifications, AdminReports, AdminCompanies } from './pages/admin/AdminBusiness';
+import { AdminInvoicesPage, AdminQueue, AdminRefunds, AdminPackages, AdminLogs, AdminSettings, AdminIntegrations } from './pages/admin/AdminOps';
 
 export default function App() {
   const { pathname } = useLocation();
-  const hideFooter = ['/login', '/register', '/dashboard'].includes(pathname);
+  const hideFooter = ['/login', '/register', '/dashboard'].includes(pathname) || pathname.startsWith('/admin');
 
   return (
     <>
@@ -30,6 +34,24 @@ export default function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/cart" element={<Cart />} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<AdminOverview />} />
+          <Route path="monitoring" element={<AdminDashboard />} />
+          <Route path="sales" element={<AdminSales />} />
+          <Route path="reports" element={<AdminReports />} />
+          <Route path="support" element={<AdminSupport />} />
+          <Route path="notifications" element={<AdminNotifications />} />
+          <Route path="invoices" element={<AdminInvoicesPage />} />
+          <Route path="packages" element={<AdminPackages />} />
+          <Route path="companies" element={<AdminCompanies />} />
+          <Route path="users" element={<AdminUsers />} />
+          <Route path="queue" element={<AdminQueue />} />
+          <Route path="refunds" element={<AdminRefunds />} />
+          <Route path="logs" element={<AdminLogs />} />
+          <Route path="settings" element={<AdminSettings />} />
+          <Route path="integrations" element={<AdminIntegrations />} />
+          <Route path="tax" element={<AdminTax />} />
+        </Route>
         <Route path="*" element={<NotFound />} />
       </Routes>
       {!hideFooter && <Footer />}

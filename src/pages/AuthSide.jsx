@@ -1,6 +1,8 @@
 import { CheckCircle2 } from 'lucide-react';
+import { useLang } from '../i18n/LanguageContext';
 
 export default function AuthSide({ title, text }) {
+  const { t } = useLang();
   return (
     <aside className="auth-side">
       <h2>{title}</h2>
@@ -12,8 +14,8 @@ export default function AuthSide({ title, text }) {
           'Manual entry, Excel upload or REST API',
           'Live status tracking & full audit log',
           'MFA and AES-256 encryption',
-        ].map((t) => (
-          <li key={t}><CheckCircle2 size={20} /> {t}</li>
+        ].map((item) => (
+          <li key={item}><CheckCircle2 size={20} /> {t(item)}</li>
         ))}
       </ul>
     </aside>

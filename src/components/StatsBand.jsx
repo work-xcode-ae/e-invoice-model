@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Building2, Activity, ShieldCheck, Award } from 'lucide-react';
+import { useLang } from '../i18n/LanguageContext';
 
 const stats = [
-  { icon: Building2, color: '#3b82f6', value: 10000, suffix: '+', label: 'Connected companies', sub: 'across 40+ countries' },
-  { icon: Activity, color: '#10b981', value: 99.5, suffix: '%', decimals: 1, label: 'Availability target', sub: 'monitored 24/7' },
-  { icon: ShieldCheck, color: '#8b5cf6', value: 34, label: 'Validation checkpoints', sub: 'PINT AE & EN 16931' },
-  { icon: Award, color: '#f59e0b', text: 'ISO 27001', label: 'Certified security', sub: '& ISO 22301 continuity' },
+  { icon: Building2, color: '#0f5c94', value: 10000, suffix: '+', label: 'Connected companies', sub: 'across 40+ countries' },
+  { icon: Activity, color: '#1a86a6', value: 99.5, suffix: '%', decimals: 1, label: 'Availability target', sub: 'monitored 24/7' },
+  { icon: ShieldCheck, color: '#b07f3e', value: 34, label: 'Validation checkpoints', sub: 'PINT AE & EN 16931' },
+  { icon: Award, color: '#092f58', text: 'ISO 27001', label: 'Certified security', sub: '& ISO 22301 continuity' },
 ];
 
 function CountUp({ to, decimals = 0, suffix = '', start }) {
@@ -28,6 +29,7 @@ function CountUp({ to, decimals = 0, suffix = '', start }) {
 }
 
 export default function StatsBand() {
+  const { t } = useLang();
   const ref = useRef(null);
   const [seen, setSeen] = useState(false);
 
@@ -47,11 +49,11 @@ export default function StatsBand() {
             <div className="stat" key={label} style={{ '--c': color }}>
               <span className="stat-ic"><Icon size={20} /></span>
               <div>
-                <strong className="stat-num">
+                <strong className="stat-num" dir="ltr">
                   {text || <CountUp to={value} suffix={suffix} decimals={decimals} start={seen} />}
                 </strong>
-                <span className="stat-label">{label}</span>
-                <span className="stat-sub">{sub}</span>
+                <span className="stat-label">{t(label)}</span>
+                <span className="stat-sub">{t(sub)}</span>
               </div>
             </div>
           ))}

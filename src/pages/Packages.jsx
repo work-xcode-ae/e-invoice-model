@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Check, Minus, PackagePlus, Info } from 'lucide-react';
 import PageHero from '../components/PageHero';
 import PackageCard, { PeriodToggle } from '../components/PackageCard';
-import { packages, addOns, formatMoney } from '../data/packages';
+import { packages, activePackages, addOns, formatMoney, VAT_RATE, PRICES_INCLUDE_VAT } from '../data/packages';
 import { useAuth } from '../context/AuthContext';
 import { choosePackage, planAction, actionLabel } from '../data/planActions';
+import { useLang } from '../i18n/LanguageContext';
 
 const matrix = [
   ['Transactions / month', '100', '500', '1,000'],
@@ -22,15 +23,18 @@ const matrix = [
   ['Support', 'Standard', 'Priority', 'Dedicated'],
 ];
 
-const Cell = ({ v }) =>
+const Cell = ({ v, t }) =>
   v === true ? <Check size={18} className="yes" style={{ margin: '0 auto' }} />
     : v === false ? <Minus size={18} className="no" style={{ margin: '0 auto' }} />
-    : <span>{v}</span>;
+    : <span>{t(v)}</span>;
+
+const vatNote = () => ({ rate: +(VAT_RATE * 100).toFixed(2), included: PRICES_INCLUDE_VAT });
 
 export default function Packages() {
   const [months, setMonths] = useState(1);
   const navigate = useNavigate();
   const { setCart, user } = useAuth();
+  const { t } = useLang();
 
   const choose = (pkg) => choosePackage({ user, pkg, months, setCart, navigate });
 
@@ -42,8 +46,8 @@ export default function Packages() {
   return (
     <>
       <PageHero
-        title="Packages & Pricing"
-        subtitle="Prices in AED, excluding 5% VAT. Renew, top up or upgrade anytime."
+        title={t('Packages & Pricing')}
+        subtitle={t(vatNote().included ? 'Prices in AED, including {rate}% VAT. Renew, top up or upgrade anytime.' : vatNote().rate ? 'Prices in AED, excluding {rate}% VAT. Renew, top up or upgrade anytime.' : 'Prices in AED. Renew, top up or upgrade anytime.', { rate: vatNote().rate })}
         overlap
         center
       >
@@ -53,9 +57,9 @@ export default function Packages() {
       <section className="pricing-overlap">
         <div className="container">
           <div className="pgrid">
-            {packages.map((p) => (
+            {activePackages().map((p) => (
               <PackageCard key={p.id} pkg={p} months={months} onSelect={choose}
-                label={actionLabel(planAction(user?.subscription, p), p)} current={user?.subscription?.packageId === p.id} />
+                label={actionLabel(planAction(user?.subscription, p), p, t)} current={user?.subscription?.packageId === p.id} />
             ))}
           </div>
         </div>
@@ -67,9 +71,9 @@ export default function Packages() {
           {/* Add-ons */}
           <div className="mt-4" id="addons">
             <div className="section-head" style={{ marginBottom: 28 }}>
-              <div className="eyebrow">Add-ons</div>
-              <h2>Need more transactions this period?</h2>
-              <p>Add-on transactions are added to your current package and stay valid until its end date.</p>
+              <div className="eyebrow">{t('Add-ons')}</div>
+              <h2>{t('Need more transactions this period?')}</h2>
+              <p>{t('Add-on transactions are added to your current package and stay valid until its end date.')}</p>
             </div>
             <div className="grid grid-3">
               {addOns.map((a) => (
@@ -77,19 +81,19 @@ export default function Packages() {
                   <div className="flex items-center gap-2">
                     <div className="icon-box green mb-0"><PackagePlus size={20} /></div>
                     <div>
-                      <h3 className="mb-0" style={{ fontSize: 17 }}>+{a.transactions} transactions</h3>
+                      <h3 className="mb-0" style={{ fontSize: 17 }}>{t('+{n} transactions', { n: a.transactions })}</h3>
                       <p>{formatMoney(a.price)}</p>
                     </div>
                   </div>
                   <button className="btn btn-outline btn-sm" onClick={() => buyAddon(a)} disabled={!user?.subscription}>
-                    Add
+                    {t('Add')}
                   </button>
                 </div>
               ))}
             </div>
             {!user?.subscription && (
               <div className="alert info mt-2">
-                <Info size={18} /> Add-ons are available after you buy a package. Log in and choose a package first.
+                <Info size={18} /> {t('Add-ons are available after you buy a package. Log in and choose a package first.')}
               </div>
             )}
           </div>
@@ -97,22 +101,22 @@ export default function Packages() {
           {/* Comparison */}
           <div className="mt-4">
             <div className="section-head" style={{ marginBottom: 28 }}>
-              <div className="eyebrow">Compare</div>
-              <h2>Full feature comparison</h2>
+              <div className="eyebrow">{t('Compare')}</div>
+              <h2>{t('Full feature comparison')}</h2>
             </div>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Feature</th>
-                    {packages.map((p) => <th key={p.id} className="center">{p.name}<br /><span className="muted" style={{ fontWeight: 500 }}>AED {p.price}/mo</span></th>)}
+                    <th>{t('Feature')}</th>
+                    {packages.map((p) => <th key={p.id} className="center">{t(p.name)}<br /><span className="muted" style={{ fontWeight: 500 }}>{formatMoney(p.price)}/{t('mo')}</span></th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {matrix.map(([label, ...vals]) => (
                     <tr key={label}>
-                      <td>{label}</td>
-                      {vals.map((v, i) => <td key={i} className="center"><Cell v={v} /></td>)}
+                      <td>{t(label)}</td>
+                      {vals.map((v, i) => <td key={i} className="center"><Cell v={v} t={t} /></td>)}
                     </tr>
                   ))}
                 </tbody>
@@ -123,22 +127,22 @@ export default function Packages() {
           {/* Rules */}
           <div className="grid grid-2 mt-4">
             <div className="card">
-              <h3>Package rules</h3>
+              <h3>{t('Package rules')}</h3>
               <ul className="req-list mt-2">
-                <li><Check size={16} /> Each sent invoice uses one transaction from your package.</li>
-                <li><Check size={16} /> When the limit is reached, new invoices pause until you renew, upgrade or buy an add-on.</li>
-                <li><Check size={16} /> Renewal starts a new period with a fresh transaction allowance.</li>
-                <li><Check size={16} /> Downgrades apply from the next billing period.</li>
-                <li><Check size={16} /> Upgrades apply immediately. You only pay the prorated difference for the days left.</li>
+                <li><Check size={16} /> {t('Each sent invoice uses one transaction from your package.')}</li>
+                <li><Check size={16} /> {t('When the limit is reached, new invoices pause until you renew, upgrade or buy an add-on.')}</li>
+                <li><Check size={16} /> {t('Renewal starts a new period with a fresh transaction allowance.')}</li>
+                <li><Check size={16} /> {t('Downgrades apply from the next billing period.')}</li>
+                <li><Check size={16} /> {t('Upgrades apply immediately. You only pay the prorated difference for the days left.')}</li>
               </ul>
             </div>
             <div className="card">
-              <h3>User limits</h3>
+              <h3>{t('User limits')}</h3>
               <ul className="req-list mt-2">
-                <li><Check size={16} /> Active users cannot exceed your package limit.</li>
-                <li><Check size={16} /> Before downgrading, the account owner deactivates extra users.</li>
-                <li><Check size={16} /> Deactivated users keep their history but cannot sign in.</li>
-                <li><Check size={16} /> The account owner is always counted as one user.</li>
+                <li><Check size={16} /> {t('Active users cannot exceed your package limit.')}</li>
+                <li><Check size={16} /> {t('Before downgrading, the account owner deactivates extra users.')}</li>
+                <li><Check size={16} /> {t('Deactivated users keep their history but cannot sign in.')}</li>
+                <li><Check size={16} /> {t('The account owner is always counted as one user.')}</li>
               </ul>
             </div>
           </div>

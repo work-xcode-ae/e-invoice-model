@@ -14,8 +14,15 @@ export function planAction(subscription, pkg) {
   return pkg.price > getPackage(subscription.packageId).price ? 'upgrade' : 'downgrade';
 }
 
-export const actionLabel = (action, pkg) =>
-  ({ buy: `Get ${pkg.name}`, renew: 'Renew current plan', upgrade: `Upgrade to ${pkg.name}`, downgrade: `Switch to ${pkg.name}` }[action]);
+export const actionLabel = (action, pkg, t = (s, v) => s.replace(/\{(\w+)\}/g, (m, k) => v?.[k] ?? m)) => {
+  const name = t(pkg.name);
+  return {
+    buy: t('Get {name}', { name }),
+    renew: t('Renew current plan'),
+    upgrade: t('Upgrade to {name}', { name }),
+    downgrade: t('Switch to {name}', { name }),
+  }[action];
+};
 
 /** Builds the cart item (or a redirect) for a package choice. */
 export function choosePackage({ user, pkg, months, setCart, navigate }) {
@@ -27,8 +34,7 @@ export function choosePackage({ user, pkg, months, setCart, navigate }) {
   } else if (action === 'downgrade') {
     navigate('/dashboard?tab=plan', { state: { downgradeTo: pkg.id } });
   } else {
-    const m = action === 'renew' ? months : months;
-    setCart({ type: 'package', packageId: pkg.id, months: m });
+    setCart({ type: 'package', packageId: pkg.id, months });
     navigate('/cart');
   }
 }

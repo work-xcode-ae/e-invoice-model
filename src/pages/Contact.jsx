@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { Mail, MapPin, Phone, Clock, Headphones, CheckCircle2, Loader2, Send } from 'lucide-react';
 import PageHero from '../components/PageHero';
 import { sendContactMessage } from '../services/api';
+import { useLang } from '../i18n/LanguageContext';
 
 const topics = ['Sales & packages', 'Onboarding / EmaraTax linking', 'Technical support', 'API & integration', 'Billing & refunds', 'Other'];
 const empty = { name: '', email: '', phone: '', company: '', topic: topics[0], message: '' };
 
 export default function Contact() {
+  const { t } = useLang();
   const [form, setForm] = useState(empty);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
@@ -30,68 +32,68 @@ export default function Contact() {
 
   return (
     <>
-      <PageHero title="Contact Us" subtitle="Questions about packages, onboarding or integration? Our team in Abu Dhabi is here to help." />
+      <PageHero title={t('Contact Us')} subtitle={t('Questions about packages, onboarding or integration? Our team in Abu Dhabi is here to help.')} />
       <section className="section">
         <div className="container contact-grid">
           <div className="card">
-            <h3>Get in touch</h3>
-            <p className="mb-2">We answer most messages within one business day.</p>
+            <h3>{t('Get in touch')}</h3>
+            <p className="mb-2">{t('We answer most messages within one business day.')}</p>
             {[
-              { icon: Mail, t: 'Email', d: <a href="mailto:info@modelfc.ae">info@modelfc.ae</a> },
-              { icon: Phone, t: 'Phone', d: '+971 2 000 0000' },
-              { icon: MapPin, t: 'Office', d: 'Al Wahda Commercial Tower, 15th Floor, Office 1504, Abu Dhabi, UAE' },
-              { icon: Clock, t: 'Working hours', d: 'Monday – Friday, 9:00 AM – 6:00 PM (GST)' },
-              { icon: Headphones, t: 'Support', d: 'First-line support for all customers, with 24/7 platform monitoring.' },
-            ].map(({ icon: Icon, t, d }) => (
-              <div className="info-item" key={t}>
+              { icon: Mail, title: 'Email', d: <a href="mailto:info@modelfc.ae" dir="ltr">info@modelfc.ae</a> },
+              { icon: Phone, title: 'Phone', d: <span dir="ltr">+971 2 000 0000</span> },
+              { icon: MapPin, title: 'Office', d: 'Al Wahda Commercial Tower, 15th Floor, Office 1504, Abu Dhabi, UAE' },
+              { icon: Clock, title: 'Working hours', d: 'Monday – Friday, 9:00 AM – 6:00 PM (GST)' },
+              { icon: Headphones, title: 'Support', d: 'First-line support for all customers, with 24/7 platform monitoring.' },
+            ].map(({ icon: Icon, title, d }) => (
+              <div className="info-item" key={title}>
                 <div className="icon-box"><Icon size={20} /></div>
-                <div><h4>{t}</h4><p>{d}</p></div>
+                <div><h4>{t(title)}</h4><p>{typeof d === 'string' ? t(d) : d}</p></div>
               </div>
             ))}
           </div>
 
           <div className="card">
-            <h3>Send us a message</h3>
+            <h3>{t('Send us a message')}</h3>
             {ticket && (
               <div className="alert success mb-2 mt-1">
                 <CheckCircle2 size={18} />
-                <span>Thank you! Your message was sent. Ticket number: <strong>{ticket}</strong>.</span>
+                <span>{t('Thank you! Your message was sent. Ticket number:')} <strong dir="ltr">{ticket}</strong></span>
               </div>
             )}
             <form onSubmit={onSubmit} noValidate className="mt-2">
               <div className="form-grid">
                 <div className="field">
-                  <label htmlFor="c-name">Full name *</label>
+                  <label htmlFor="c-name">{t('Full name *')}</label>
                   <input id="c-name" className={`input ${errors.name ? 'invalid' : ''}`} value={form.name} onChange={set('name')} />
-                  {errors.name && <span className="err">{errors.name}</span>}
+                  {errors.name && <span className="err">{t(errors.name)}</span>}
                 </div>
                 <div className="field">
-                  <label htmlFor="c-email">Email *</label>
-                  <input id="c-email" type="email" className={`input ${errors.email ? 'invalid' : ''}`} value={form.email} onChange={set('email')} />
-                  {errors.email && <span className="err">{errors.email}</span>}
+                  <label htmlFor="c-email">{t('Email *')}</label>
+                  <input id="c-email" dir="ltr" type="email" className={`input ${errors.email ? 'invalid' : ''}`} value={form.email} onChange={set('email')} />
+                  {errors.email && <span className="err">{t(errors.email)}</span>}
                 </div>
                 <div className="field">
-                  <label htmlFor="c-phone">Phone</label>
-                  <input id="c-phone" className="input" value={form.phone} onChange={set('phone')} placeholder="+971" />
+                  <label htmlFor="c-phone">{t('Phone')}</label>
+                  <input id="c-phone" className="input" value={form.phone} onChange={set('phone')} placeholder="+971" dir="ltr" />
                 </div>
                 <div className="field">
-                  <label htmlFor="c-company">Company</label>
+                  <label htmlFor="c-company">{t('Company')}</label>
                   <input id="c-company" className="input" value={form.company} onChange={set('company')} />
                 </div>
                 <div className="field full">
-                  <label htmlFor="c-topic">Topic</label>
+                  <label htmlFor="c-topic">{t('Topic')}</label>
                   <select id="c-topic" className="input" value={form.topic} onChange={set('topic')}>
-                    {topics.map((t) => <option key={t}>{t}</option>)}
+                    {topics.map((tp) => <option key={tp} value={tp}>{t(tp)}</option>)}
                   </select>
                 </div>
                 <div className="field full">
-                  <label htmlFor="c-msg">Message *</label>
+                  <label htmlFor="c-msg">{t('Message *')}</label>
                   <textarea id="c-msg" className={`input ${errors.message ? 'invalid' : ''}`} value={form.message} onChange={set('message')} />
-                  {errors.message && <span className="err">{errors.message}</span>}
+                  {errors.message && <span className="err">{t(errors.message)}</span>}
                 </div>
               </div>
               <button className="btn btn-primary btn-lg mt-3" disabled={loading}>
-                {loading ? <><Loader2 size={18} className="spin" /> Sending…</> : <><Send size={18} /> Send message</>}
+                {loading ? <><Loader2 size={18} className="spin" /> {t('Sending…')}</> : <><Send size={18} /> {t('Send message')}</>}
               </button>
             </form>
           </div>

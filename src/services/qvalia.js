@@ -13,13 +13,13 @@ import { read, write } from './api';
 import { computeTotals } from './invoices';
 import { PROFILES, EXEMPTION_REASON } from '../data/ubl';
 
-const KEY = 'mei_qvalia';
-export const QVALIA_BASE = { test: 'https://api-test.qvalia.com', production: 'https://api.qvalia.com' };
+const KEY = 'mei_access_point';
+export const QVALIA_BASE = { test: 'https://ap-test.modelfc.ae', production: 'https://ap.modelfc.ae' };
 export const DEFAULT_QVALIA = {
   mode: 'simulation', // 'simulation' | 'proxy'
   environment: 'test', // 'test' | 'production'
   accountRegNo: '',
-  proxyUrl: '/api/qvalia',
+  proxyUrl: '/api/access-point',
   profile: 'pint-ae',
   endpointScheme: '0235',
   format: 'json', // 'json' | 'xml'
@@ -300,7 +300,7 @@ export async function sendInvoice(inv, { successRate = 0.85, cfg = getQvaliaConf
       return { ok: true, http: res.status, integrationId: d.integrationId || null, message: d.message || `HTTP ${res.status}`, body: resBody, request: req };
     }
     if (res.status === 409) {
-      return { ok: true, http: 409, integrationId: resBody?.metadata?.integrationId || null, message: 'Duplicate: already accepted by Qvalia', body: resBody, request: req };
+      return { ok: true, http: 409, integrationId: resBody?.metadata?.integrationId || null, message: 'Duplicate: already accepted by the access point', body: resBody, request: req };
     }
     const retry = res.status === 429 || res.status >= 500;
     const msg = resBody?.data?.message || resBody?.message || res.statusText;

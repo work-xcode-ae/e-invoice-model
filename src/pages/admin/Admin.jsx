@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react';
-import { NavLink, Outlet, Navigate, Link } from 'react-router-dom';
+import { NavLink, Outlet, Navigate, Link, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Package, Building2, Users, ListOrdered, RotateCcw, ScrollText, Settings,
   Send, Clock, Loader, XCircle, Search, X, Power, History, Server, AlertOctagon, UserCog, Gauge, Plug,
-  TrendingUp, BarChart3, LifeBuoy, Megaphone, Activity, Percent,
+  TrendingUp, BarChart3, LifeBuoy, Megaphone, Activity, Percent, ListChecks, Route, Target, Handshake, Receipt, Globe, Bell, LogOut,
 } from 'lucide-react';
+import { feature } from '../../services/platform';
+import { getTasks, staffNotes, markStaffNotesRead } from '../../services/tasks';
+import { getOrders } from '../../services/billing';
 import { ticketStats } from '../../services/support';
 import { useAuth } from '../../context/AuthContext';
 import { useLang } from '../../i18n/LanguageContext';
@@ -19,50 +22,71 @@ import { getUserById } from '../../services/api';
 
 const NAV_GROUPS = [
   { label: 'Overview', items: [
-    { to: '/admin', end: true, icon: LayoutDashboard, label: 'Business overview' },
+    { to: '/admin', end: true, icon: LayoutDashboard, label: 'Business overview', perm: 'reports', lv: ['full'] },
+    { to: '/admin/owner', icon: Gauge, label: 'Owner dashboard', perm: 'owner' },
+    { to: '/admin/tasks', icon: ListChecks, label: 'Tasks', count: 'tasks' },
   ] },
-  { label: 'Business', items: [
-    { to: '/admin/sales', icon: TrendingUp, label: 'Sales & profit' },
-    { to: '/admin/packages', icon: Package, label: 'Packages' },
-    { to: '/admin/companies', icon: Building2, label: 'Companies' },
-    { to: '/admin/reports', icon: BarChart3, label: 'Reports' },
+  { label: 'Customers', items: [
+    { to: '/admin/onboarding', icon: Route, label: 'Customers and onboarding', perm: 'documents' },
+    { to: '/admin/companies', icon: Building2, label: 'Companies', perm: 'documents' },
+    { to: '/admin/users', icon: Users, label: 'Customer users', perm: 'documents' },
+    { to: '/admin/support', icon: LifeBuoy, label: 'Support tickets', count: 'support', perm: 'tickets' },
+    { to: '/admin/notifications', icon: Megaphone, label: 'Notifications', perm: 'tickets', lv: ['full'] },
+    { to: '/admin/refunds', icon: RotateCcw, label: 'Refund requests', count: 'refunds', perm: 'refunds' },
   ] },
-  { label: 'Customer care', items: [
-    { to: '/admin/support', icon: LifeBuoy, label: 'Support tickets', count: 'support' },
-    { to: '/admin/notifications', icon: Megaphone, label: 'Notifications' },
-    { to: '/admin/refunds', icon: RotateCcw, label: 'Refund requests', count: 'refunds' },
+  { label: 'Sales and partners', items: [
+    { to: '/admin/crm', icon: Target, label: 'Leads', perm: 'leads' },
+    { to: '/admin/partners', icon: Handshake, label: 'Partners', perm: 'partners' },
   ] },
-  { label: 'Operations', items: [
-    { to: '/admin/monitoring', icon: Activity, label: 'Invoice monitoring' },
-    { to: '/admin/queue', icon: ListOrdered, label: 'Sync queue', count: 'queue' },
-    { to: '/admin/invoices', icon: FileText, label: 'Invoices' },
-    { to: '/admin/logs', icon: ScrollText, label: 'Logs' },
+  { label: 'Finance', items: [
+    { to: '/admin/billing', icon: Receipt, label: 'Billing', count: 'bank', perm: 'bank' },
+    { to: '/admin/packages', icon: Package, label: 'Packages', perm: 'packages' },
+    { to: '/admin/sales', icon: TrendingUp, label: 'Sales & profit', perm: 'reports', lv: ['full'] },
+    { to: '/admin/finance', icon: BarChart3, label: 'Finance reports', perm: 'reports' },
+    { to: '/admin/reports', icon: ScrollText, label: 'Reports', perm: 'reports', lv: ['full'] },
+  ] },
+  { label: 'Technical', items: [
+    { to: '/admin/integrations', icon: Plug, label: 'Integrations', perm: 'integrations' },
+    { to: '/admin/monitoring', icon: Activity, label: 'Invoice monitoring', perm: 'integrations', phase2: true },
+    { to: '/admin/queue', icon: ListOrdered, label: 'Sync queue', count: 'queue', perm: 'integrations', phase2: true },
+    { to: '/admin/invoices', icon: FileText, label: 'Invoices', perm: 'integrations', phase2: true },
+    { to: '/admin/logs', icon: ScrollText, label: 'Logs', perm: 'integrations' },
   ] },
   { label: 'System', items: [
-    { to: '/admin/users', icon: Users, label: 'Users' },
-    { to: '/admin/tax', icon: Percent, label: 'Tax & VAT' },
-    { to: '/admin/integrations', icon: Plug, label: 'Integrations' },
-    { to: '/admin/settings', icon: Settings, label: 'Settings' },
+    { to: '/admin/content', icon: Globe, label: 'Website content', perm: 'settings', lv: ['full'] },
+    { to: '/admin/settings', icon: Settings, label: 'Settings', perm: 'settings' },
+    { to: '/admin/staff', icon: UserCog, label: 'Staff and roles', perm: 'staff' },
+    { to: '/admin/tax', icon: Percent, label: 'Tax & VAT', perm: 'settings', lv: ['full'] },
+    { to: '/admin/audit', icon: History, label: 'Audit log', perm: 'audit' },
   ] },
 ];
-const NAV = NAV_GROUPS.flatMap((g) => g.items);
 
 export function AdminLayout() {
-  const { isAuthenticated, isAdmin } = useAuth();
+  const { isAuthenticated, isAdmin, staffLevel, user, staffRoles, logout } = useAuth();
   const { t } = useLang();
+  const navigate = useNavigate();
   useDbVersion();
   if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: '/admin' }} />;
   if (!isAdmin) return <Navigate to="/dashboard" replace />;
+  const phase2 = feature('customerInvoicing');
+  const allowed = (i) => (!i.phase2 || phase2) && (!i.perm || (staffLevel(i.perm) && (!i.lv || i.lv.includes(staffLevel(i.perm)))));
+  const groups = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter(allowed) })).filter((g) => g.items.length);
+  const NAV = groups.flatMap((g) => g.items);
+  const tasks = getTasks();
   const counts = {
     refunds: allRefunds().filter((r) => r.status === 'Pending').length,
     support: ticketStats().unanswered,
     queue: stats().queued + stats().retrying + stats().processing,
+    tasks: tasks.filter((x) => x.assigneeId === user.id && x.status !== 'Done').length,
+    bank: getOrders().filter((o) => o.status === 'Awaiting payment confirmation').length,
   };
+  const notes = staffNotes(user.id).filter((n) => !n.read);
   return (
     <div className="dash admin">
       <aside className="dash-side">
-        <div className="admin-tag">{t('Admin panel')}</div>
-        {NAV_GROUPS.map((g) => (
+        <div className="admin-tag">{t('Model staff')} · {staffRoles.map((r) => t(r)).join(', ')}</div>
+        {notes.length > 0 && <button className="alert warn" style={{ margin: '0 8px 8px', fontSize: 13, cursor: 'pointer', textAlign: 'start' }} onClick={() => { markStaffNotesRead(user.id); navigate('/admin/tasks'); }}><Bell size={15} /> {t('{n} new notification(s)', { n: notes.length })}</button>}
+        {groups.map((g) => (
           <div key={g.label} className="side-group-admin">
             <div className="side-label">{t(g.label)}</div>
             {g.items.map(({ to, end, icon: Icon, label, count }) => (
@@ -73,6 +97,8 @@ export function AdminLayout() {
             ))}
           </div>
         ))}
+        <div className="side-sep" />
+        <button className="link" onClick={() => { logout(); navigate('/'); }}><LogOut size={18} /> {t('Logout')}</button>
       </aside>
       <main className="dash-main">
         <nav className="admin-mobile-nav">
@@ -131,7 +157,7 @@ export function AdminDashboard() {
 
   return (
     <>
-      <PageTitle title="Invoice monitoring" sub="Real-time view of invoice processing, the sync queue and the Qvalia (White Label) integration." />
+      <PageTitle title="Invoice monitoring" sub="Real-time view of invoice processing, the sync queue and the access point integration." />
       <div className="admin-kpis">
         {kpis.map(({ icon: Icon, c, label, value }) => (
           <div className="card kpi" key={label}>

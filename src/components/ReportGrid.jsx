@@ -3,7 +3,7 @@ import { Search, Printer, FileText, FileSpreadsheet, ChevronUp, ChevronDown, Che
 import { useLang } from '../i18n/LanguageContext';
 import { formatMoney } from '../data/packages';
 import { fmtDate } from '../utils/format';
-import { exportExcel, exportPdf, printReport, columnTotals } from '../services/exporters';
+import { exportExcel, exportPdf, printReport, columnTotals, exportCsv } from '../services/exporters';
 
 const NUMERIC = ['money', 'number', 'percent'];
 const localDay = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -80,6 +80,7 @@ export default function ReportGrid({ title, subtitle, columns, rows, fileName, m
       const d = exportDef();
       if (kind === 'excel') await exportExcel(d);
       else if (kind === 'pdf') await exportPdf(d);
+      else if (kind === 'csv') exportCsv(d);
       else printReport(d);
     } finally { setTimeout(() => setBusy(''), 300); }
   };
@@ -100,6 +101,7 @@ export default function ReportGrid({ title, subtitle, columns, rows, fileName, m
           <button className="btn btn-outline btn-sm" onClick={() => run('print')} disabled={!!busy || !filtered.length}><Printer size={15} /> {t('Print')}</button>
           <button className="btn btn-outline btn-sm" onClick={() => run('pdf')} disabled={!!busy || !filtered.length}>{busy === 'pdf' ? <Loader2 size={15} className="spin" /> : <FileText size={15} />} {t('PDF')}</button>
           <button className="btn btn-outline btn-sm" onClick={() => run('excel')} disabled={!!busy || !filtered.length}>{busy === 'excel' ? <Loader2 size={15} className="spin" /> : <FileSpreadsheet size={15} />} {t('Excel')}</button>
+          <button className="btn btn-outline btn-sm" onClick={() => run('csv')} disabled={!!busy || !filtered.length}><FileSpreadsheet size={15} /> CSV</button>
         </div>
       </div>
 

@@ -39,8 +39,8 @@ const initial = {
 
 function recommend(volume, users) {
   const v = Number(volume); const u = Number(users);
-  if (v > 1000) return { name: 'Platinum + add-ons or a custom plan', id: 'custom' };
-  return packages.find((p) => p.transactions >= v && p.users >= u) || packages[packages.length - 1];
+  if (v > 500) return packages.find((p) => p.id === 'enterprise') || packages[packages.length - 1];
+  return packages.find((p) => !p.custom && p.transactions >= v && p.users >= u) || packages.find((p) => p.id === 'premium');
 }
 
 export default function Requirements() {

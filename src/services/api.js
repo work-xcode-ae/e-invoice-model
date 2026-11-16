@@ -2,7 +2,7 @@
 // fetch() calls to your backend (e.g. ASP.NET / Node) without touching the pages.
 // Data is kept in localStorage for demo purposes only — never store real passwords client-side.
 
-import { getPackage, periodPrice, VAT_RATE, PRICES_INCLUDE_VAT } from '../data/packages';
+import { getPackage } from '../data/packages';
 
 export const USERS_KEY = 'mei_users';
 export const SESSION_KEY = 'mei_session';
@@ -41,11 +41,17 @@ export const write = (key, value) => {
 export const publicUser = ({ password, ...u }) => ({ ...u, teamUsers: (u.teamUsers || []).map(({ password: _p, ...m }) => m) }); // eslint-disable-line no-unused-vars
 
 // ---------- Auth ----------
-export async function register({ fullName, email, phone, password }) {
+/**
+ * Register the account owner (REG-02/REG-03/REG-04). The company is saved with the account; nothing is
+ * submitted to Model until a package is paid (REG-05), so the stage starts at "Awaiting payment".
+ */
+export async function register({ fullName, email, phone, password, company = null, acceptances = [], referral = null, inviteToken = null, method = 'Password' }) {
   await delay();
   const users = read(USERS_KEY, []);
   const exists = users.some((u) => u.email.toLowerCase() === email.toLowerCase());
   if (exists) throw fail('An account with this email already exists.');
+  const lic = company?.tradeLicense?.trim().toLowerCase();
+  if (lic && users.some((u) => u.company?.tradeLicense?.trim().toLowerCase() === lic)) throw fail('A company with this trade licence is already registered.');
   const user = {
     id: crypto.randomUUID(),
     fullName,
@@ -53,8 +59,15 @@ export async function register({ fullName, email, phone, password }) {
     phone,
     password, // DEMO ONLY — the real backend must hash passwords.
     role: 'Owner',
+    signInMethod: method,
+    emailVerified: true,
     createdAt: new Date().toISOString(),
-    company: null,
+    stage: 'Awaiting payment',
+    stageHistory: [{ from: null, to: 'Awaiting payment', at: new Date().toISOString(), by: fullName, note: 'Account created' }],
+    company: company ? { ...company, createdAt: new Date().toISOString() } : null,
+    acceptances: acceptances.map((a) => ({ ...a, actorId: 'owner', actorName: fullName })),
+    referral,
+    inviteToken,
     subscription: null,
     teamUsers: [],
   };
@@ -65,26 +78,97 @@ export async function register({ fullName, email, phone, password }) {
   return session;
 }
 
+// ---------- One-time codes (email / WhatsApp) ----------
+const OTP_KEY = 'mei_otp';
+/** Sends a 6-digit code. Demo: the code is returned so the screen can show it; a real backend never does. */
+export function sendOtp({ to, channel = 'Email', purpose = 'login', payload = null }) {
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const id = `otp-${Date.now().toString(36)}`;
+  const all = read(OTP_KEY, {});
+  all[id] = { code, to, channel, purpose, payload, expires: Date.now() + 10 * 60000, tries: 0 };
+  try { sessionStorage.setItem(OTP_KEY, JSON.stringify(all)); } catch { /* ignore */ }
+  try {
+    const box = JSON.parse(localStorage.getItem('mei_outbox') || '[]');
+    box.unshift({ id: `MSG-${id}`, at: new Date().toISOString(), template: 'Verification code', templateName: 'Verification code', to: { email: to, phone: to }, channels: [channel], lang: 'en', text: { en: `Your Model E-Invoice code is ${code}. It expires in 10 minutes.`, ar: `رمز التحقق من موديل للفوترة الإلكترونية هو ${code}. ينتهي خلال 10 دقائق.` } });
+    localStorage.setItem('mei_outbox', JSON.stringify(box.slice(0, 500)));
+  } catch { /* ignore */ }
+  return { challengeId: id, channel, to, demoCode: code };
+}
+const readOtps = () => { try { return JSON.parse(sessionStorage.getItem(OTP_KEY) || '{}'); } catch { return {}; } };
+/** Checks a code. Returns the challenge payload on success. */
+export function verifyOtp(challengeId, code) {
+  const all = readOtps();
+  const c = all[challengeId];
+  if (!c || c.expires < Date.now()) throw fail('The code has expired. Ask for a new one.');
+  if (c.tries >= 5) throw fail('Too many attempts. Ask for a new code.');
+  if (String(code).trim() !== c.code) {
+    all[challengeId] = { ...c, tries: c.tries + 1 };
+    try { sessionStorage.setItem(OTP_KEY, JSON.stringify(all)); } catch { /* ignore */ }
+    throw fail('The code is not correct.');
+  }
+  delete all[challengeId];
+  try { sessionStorage.setItem(OTP_KEY, JSON.stringify(all)); } catch { /* ignore */ }
+  return c.payload || true;
+}
+
+const mask = (email) => email.replace(/^(.).*(@.*)$/, '$1•••$2');
+
+/** If two-factor is on, return a challenge instead of a session (NFR-06: mandatory for staff and partners). */
+function withSecondFactor(session, { required, to, channel = 'Email' }) {
+  if (!required) { write(SESSION_KEY, session); return session; }
+  const c = sendOtp({ to, channel, purpose: 'login', payload: session });
+  return { otpRequired: true, challengeId: c.challengeId, channel, to: mask(to), demoCode: c.demoCode };
+}
+
+/** Second step of sign-in. */
+export async function completeLogin(challengeId, code) {
+  await delay(300);
+  const session = verifyOtp(challengeId, code);
+  write(SESSION_KEY, session);
+  return session;
+}
+
 export async function login({ email, password, remember }) {
   await delay();
+  const em = String(email || '').trim().toLowerCase();
+  // 1) Model staff (ADM-01): roles from the staff list; two-factor always.
+  const { getStaff } = await import('./staff');
+  const st = getStaff().find((s) => s.email.toLowerCase() === em);
+  if (st) {
+    if (st.password !== password) throw fail('Invalid email or password.');
+    if (st.status !== 'Active') throw fail('Your user is deactivated. Ask your company owner to activate it.');
+    const session = { token: `staff-${st.id}`, staff: true, remember, user: { id: st.id, fullName: st.name, email: st.email, role: st.roles.includes('Manager') ? 'SuperAdmin' : 'Staff', staffRoles: st.roles } };
+    return withSecondFactor(session, { required: true, to: st.email });
+  }
+  // 2) Partner users (PRT-07): two-factor always.
+  const { getPartners } = await import('./partners');
+  const partner = getPartners().find((p) => p.users.some((u) => u.email === em));
+  if (partner) {
+    const pu = partner.users.find((u) => u.email === em);
+    if (pu.password !== password) throw fail('Invalid email or password.');
+    if (pu.status !== 'Active') throw fail('Your user is deactivated. Ask your company owner to activate it.');
+    if (['Applied', 'Under review', 'Rejected'].includes(partner.status)) throw fail('Your partner application is still being reviewed. We will email you when it is approved.');
+    if (partner.status === 'Suspended') throw fail('This partner account is suspended. Contact Model.');
+    const session = { token: `partner-${pu.id}`, remember, partnerId: partner.id, partnerUser: { id: pu.id, name: pu.name, email: pu.email, role: pu.role }, user: { id: partner.id, fullName: pu.name, email: pu.email, role: 'Partner' } };
+    return withSecondFactor(session, { required: true, to: pu.email });
+  }
+  // 3) Customers. Two-factor is available and optional (NFR-06).
   const users = read(USERS_KEY, []);
-  const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  const user = users.find((u) => u.email.toLowerCase() === em);
   if (!user) {
     // Team member of a company: signs in to the owner's company with their own role.
-    const owner = users.find((u) => (u.teamUsers || []).some((m) => m.email?.toLowerCase() === email.toLowerCase()));
-    const m = owner?.teamUsers.find((x) => x.email.toLowerCase() === email.toLowerCase());
+    const owner = users.find((u) => (u.teamUsers || []).some((m) => m.email?.toLowerCase() === em));
+    const m = owner?.teamUsers.find((x) => x.email.toLowerCase() === em);
     if (!m || (m.password || 'Demo@2026') !== password) throw fail('Invalid email or password.');
     if (m.status !== 'Active') throw fail('Your user is deactivated. Ask your company owner to activate it.');
     if (owner.disabled) throw fail('This company is deactivated. Contact support.');
     const role = m.role === 'User' ? 'Accountant' : m.role;
     const session = { token: `demo-${owner.id}-${m.id}`, user: publicUser(owner), member: { id: m.id, name: m.name, email: m.email, role }, remember };
-    write(SESSION_KEY, session);
-    return session;
+    return withSecondFactor(session, { required: !!m.twoFA, to: m.email });
   }
   if (user.password !== password) throw fail('Invalid email or password.');
   const session = { token: `demo-${user.id}`, user: publicUser(user), remember };
-  write(SESSION_KEY, session);
-  return session;
+  return withSecondFactor(session, { required: !!user.twoFA && user.role !== 'SuperAdmin', to: user.email });
 }
 
 export async function forgotPassword(email) {
@@ -124,124 +208,6 @@ export function updateUser(userId, patch) {
 
 /** Replace the whole users list (bulk updates from the queue engine / admin). */
 export const saveUsers = (users) => write(USERS_KEY, users);
-
-// ---------- Subscription / checkout ----------
-export function quote(cartItem) {
-  if (!cartItem) return null;
-  let subtotal = 0;
-  if (cartItem.type === 'package') {
-    subtotal = periodPrice(getPackage(cartItem.packageId), cartItem.months);
-  } else if (cartItem.type === 'addon' || cartItem.type === 'upgrade') {
-    subtotal = cartItem.price;
-  }
-  const rate = +(VAT_RATE * 100).toFixed(2);
-  if (PRICES_INCLUDE_VAT) {
-    // Prices already contain VAT: the total stays the same and VAT is taken out of it.
-    const net = +(subtotal / (1 + VAT_RATE)).toFixed(2);
-    return { subtotal: net, vat: +(subtotal - net).toFixed(2), total: subtotal, rate, included: true };
-  }
-  const vat = +(subtotal * VAT_RATE).toFixed(2);
-  return { subtotal, vat, total: +(subtotal + vat).toFixed(2), rate, included: false };
-}
-
-const paymentType = (user, item) => {
-  if (item.type === 'addon') return 'Add-on';
-  if (item.type === 'upgrade') return 'Upgrade';
-  return user.subscription && user.subscription.packageId === item.packageId ? 'Renewal' : 'New';
-};
-
-const recordPayment = (user, item, q, paymentId) => [
-  ...(user.payments || []),
-  {
-    id: paymentId,
-    date: new Date().toISOString(),
-    type: paymentType(user, item),
-    packageId: item.packageId || user.subscription?.packageId || null,
-    // English template + vars, translated when displayed.
-    description:
-      item.type === 'package' ? { key: '{name} package · {months} month(s)', vars: { name: getPackage(item.packageId).name, months: item.months } }
-      : item.type === 'addon' ? { key: 'Add-on · +{n} transactions', vars: { n: item.transactions } }
-      : { key: 'Upgrade to {name}', vars: { name: getPackage(item.packageId).name } },
-    total: q.total,
-    vat: q.vat,
-    vatRate: q.rate,
-    status: 'Paid',
-  },
-];
-
-export async function checkout(userId, cartItem) {
-  await delay(1200); // simulate Stripe payment
-  const users = read(USERS_KEY, []);
-  const user = users.find((u) => u.id === userId);
-  const q = quote(cartItem);
-  const paymentId = `pi_${Math.random().toString(36).slice(2, 12)}`;
-  const payments = recordPayment(user, cartItem, q, paymentId);
-  const current = user.subscription;
-
-  if (cartItem.type === 'package') {
-    const pkg = getPackage(cartItem.packageId);
-    // Renewal of the same active package: extend the period and add a new allowance.
-    if (current && current.status === 'Active' && current.packageId === pkg.id) {
-      const end = new Date(current.endDate);
-      end.setMonth(end.getMonth() + cartItem.months);
-      const subscription = {
-        ...current,
-        months: current.months + cartItem.months,
-        endDate: end.toISOString(),
-        transactionsLimit: current.transactionsLimit + pkg.transactions * cartItem.months,
-        pendingChange: null,
-      };
-      return { user: updateUser(userId, { subscription, payments }), paymentId, renewed: true, ...q };
-    }
-    const start = new Date();
-    const end = new Date(start);
-    end.setMonth(end.getMonth() + cartItem.months);
-    const subscription = {
-      packageId: pkg.id,
-      packageName: pkg.name,
-      months: cartItem.months,
-      transactionsLimit: pkg.transactions * cartItem.months,
-      transactionsUsed: 0,
-      addonTransactions: 0,
-      usersLimit: pkg.users,
-      startDate: start.toISOString(),
-      endDate: end.toISOString(),
-      status: 'Active',
-      paymentId,
-      total: q.total,
-      pendingChange: null,
-    };
-    // Demo activity so the dashboard statistics have something to show.
-    const activity = buildDemoActivity(user.id, Math.round(subscription.transactionsLimit * 0.42));
-    subscription.transactionsUsed = activity.totals.sent;
-    return { user: updateUser(userId, { subscription, payments, activity }), paymentId, ...q };
-  }
-
-  if (cartItem.type === 'addon') {
-    if (!current) throw fail('You need an active package before buying add-ons.');
-    const subscription = {
-      ...current,
-      transactionsLimit: current.transactionsLimit + cartItem.transactions,
-      addonTransactions: (current.addonTransactions || 0) + cartItem.transactions,
-    };
-    return { user: updateUser(userId, { subscription, payments }), paymentId, ...q };
-  }
-
-  if (cartItem.type === 'upgrade') {
-    if (!current) throw fail('You need an active package before upgrading.');
-    const pkg = getPackage(cartItem.packageId);
-    const subscription = {
-      ...current,
-      packageId: pkg.id,
-      packageName: pkg.name,
-      usersLimit: pkg.users,
-      transactionsLimit: pkg.transactions * current.months + (current.addonTransactions || 0),
-      pendingChange: null,
-    };
-    return { user: updateUser(userId, { subscription, payments }), paymentId, upgraded: true, ...q };
-  }
-  throw fail('Unknown cart item.');
-}
 
 // ---------- Plan changes ----------
 /** Prorated price to upgrade now: (new − old monthly price) × months × remaining share of the period. */
@@ -360,6 +326,13 @@ export async function sendContactMessage(payload) {
   const ticket = `MSG-${String(list.length + 1001)}`;
   list.push({ ...payload, ticket, createdAt: new Date().toISOString() });
   write(MESSAGES_KEY, list);
+  // Sales and Enterprise enquiries become CRM leads with their source (CRM-02).
+  if (/Sales|Enterprise/.test(payload.topic || '')) {
+    try {
+      const { createLead } = await import('./crm');
+      createLead({ name: payload.name, company: payload.company, email: payload.email, phone: payload.phone, source: /Enterprise/.test(payload.topic) ? 'Enterprise' : 'Website form', note: payload.message });
+    } catch { /* ignore */ }
+  }
   // Also lands in the system admin's support inbox.
   try {
     const { createTicket } = await import('./support');
@@ -374,6 +347,10 @@ export async function submitRequirement(payload) {
   const ref = `REQ-${String(list.length + 2001)}`;
   list.push({ ...payload, ref, status: 'Submitted', createdAt: new Date().toISOString() });
   write(REQUESTS_KEY, list);
+  try {
+    const { createLead } = await import('./crm');
+    createLead({ name: payload.contactName, company: payload.companyName, email: payload.email, phone: payload.phone, source: 'Website form', package: payload.recommended, note: `Requirements form ${ref}` });
+  } catch { /* ignore */ }
   return { ref };
 }
 
@@ -399,7 +376,7 @@ export const DEMO_PASSWORD = 'Demo@2026';
 export function seedDemoAccount() {
   const users = read(USERS_KEY, []);
   if (users.some((u) => u.email === DEMO_EMAIL)) return;
-  const pkg = getPackage('standard');
+  const pkg = getPackage('pro');
   const start = new Date(); start.setDate(start.getDate() - 12);
   const end = new Date(start); end.setMonth(end.getMonth() + 1);
   const lastMonth = new Date(start); lastMonth.setMonth(lastMonth.getMonth() - 1);
@@ -427,8 +404,8 @@ export function seedDemoAccount() {
       { id: 'tm-3', name: 'Priya Nair', email: 'priya@abctrading.ae', role: 'Viewer', status: 'Active' },
     ],
     payments: [
-      { id: 'pi_demo00001', date: lastMonth.toISOString(), description: { key: '{name} package · {months} month(s)', vars: { name: 'Standard', months: 1 } }, total: 105, status: 'Paid' },
-      { id: 'pi_demo00002', date: start.toISOString(), description: { key: '{name} package · {months} month(s)', vars: { name: 'Standard', months: 1 } }, total: 105, status: 'Paid' },
+      { id: 'pi_demo00001', date: lastMonth.toISOString(), description: { key: '{name} package · {months} month(s)', vars: { name: 'Pro', months: 1 } }, total: 105, status: 'Paid' },
+      { id: 'pi_demo00002', date: start.toISOString(), description: { key: '{name} package · {months} month(s)', vars: { name: 'Pro', months: 1 } }, total: 105, status: 'Paid' },
       { id: 'pi_demo00003', date: new Date(Date.now() - 3 * 86400000).toISOString(), description: { key: 'Add-on · +{n} transactions', vars: { n: 100 } }, total: 94.5, status: 'Paid' },
     ],
   });

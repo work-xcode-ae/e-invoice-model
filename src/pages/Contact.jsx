@@ -3,13 +3,16 @@ import { Mail, MapPin, Phone, Clock, Headphones, CheckCircle2, Loader2, Send } f
 import PageHero from '../components/PageHero';
 import { sendContactMessage } from '../services/api';
 import { useLang } from '../i18n/LanguageContext';
+import { useSeo } from '../components/Brd';
 
-const topics = ['Sales & packages', 'Onboarding / EmaraTax linking', 'Technical support', 'API & integration', 'Billing & refunds', 'Other'];
+const topics = ['Sales & packages', 'Enterprise quote', 'Onboarding / EmaraTax linking', 'Technical support', 'API & integration', 'Billing & refunds', 'Other'];
 const empty = { name: '', email: '', phone: '', company: '', topic: topics[0], message: '' };
+const initialTopic = () => (new URLSearchParams(window.location.search).get('enterprise') ? 'Enterprise quote' : topics[0]);
 
 export default function Contact() {
   const { t } = useLang();
-  const [form, setForm] = useState(empty);
+  const [form, setForm] = useState(() => ({ ...empty, topic: initialTopic() }));
+  useSeo('contact');
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [ticket, setTicket] = useState(null);

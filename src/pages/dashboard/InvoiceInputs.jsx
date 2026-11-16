@@ -59,7 +59,7 @@ export function ResultPanel({ result, onClose, onFix }) {
       {created.length > 0 && (
         <>
           <div className="rp-head"><CheckCircle2 size={22} /><strong>{t('{n} invoice(s) passed validation and were added to the queue.', { n: created.length })}</strong></div>
-          <p className="muted" style={{ fontSize: 13 }}>{t('Each one is converted to a UBL e-invoice and sent to Qvalia. Open an invoice to see the payload and response.')}</p>
+          <p className="muted" style={{ fontSize: 13 }}>{t('Each one is converted to a UBL e-invoice and sent to the access point. Open an invoice to see the payload and response.')}</p>
           <div className="rp-list">
             {created.slice(0, 6).map((i) => <span key={i.id} className="chip-mini" dir="ltr">{i.id} · {i.queueId}</span>)}
             {created.length > 6 && <span className="chip-mini">+{created.length - 6}</span>}
@@ -414,7 +414,7 @@ export function ExcelUpload() {
             <li>{t('Add your customers and items first (Customers and Items in the menu).')}</li>
             <li>{t('Download the template and add one row per invoice line. Rows with the same InvoiceRef become one invoice.')}</li>
             <li>{t('Upload. Each invoice is validated; errors are listed per row with a quick fix.')}</li>
-            <li>{t('Valid invoices are converted to UBL and sent to Qvalia through the API.')}</li>
+            <li>{t('Valid invoices are converted to UBL and sent to the access point through the API.')}</li>
           </ol>
           <button className="btn btn-outline btn-sm" onClick={downloadTemplate}><Download size={15} /> {t('Download template')}</button>
         </div>

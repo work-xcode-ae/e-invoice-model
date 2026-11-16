@@ -38,6 +38,16 @@ export async function exportExcel({ title, meta = [], columns, rows, totals, fil
   XLSX.writeFile(wb, `${fileName}.xlsx`);
 }
 
+// ---------- CSV (INV-09) ----------
+/** UTF-8 CSV with a BOM so Excel opens Arabic correctly. Numbers are raw, not formatted. */
+export function exportCsv({ columns, rows, fileName }) {
+  const q = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const lines = [columns.map((c) => q(c.label)).join(','), ...rows.map((r) => columns.map((c) => q(NUMERIC.includes(c.type) ? (r[c.key] ?? '') : c.type === 'date' ? String(r[c.key] ?? '').slice(0, 10) : r[c.key])).join(','))];
+  const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${fileName}.csv`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
 // ---------- HTML used by print and PDF ----------
 const CSS = (dir) => `
   .rp { font-family: ${dir === 'rtl' ? "'IBM Plex Sans Arabic', " : ''}'Plus Jakarta Sans', system-ui, sans-serif; color: #0f1e33; direction: ${dir}; background: #fff; box-sizing: border-box; }

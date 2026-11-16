@@ -11,7 +11,13 @@ export function useAlertAction() {
         if (user?.subscription) { setCart({ type: 'package', packageId: user.subscription.packageId, months: 1 }); navigate('/cart'); }
         else navigate('/packages');
         break;
-      case 'addon': navigate('/packages#addons'); break;
+      case 'addon': navigate('/dashboard?tab=usage'); break;
+      case 'usage': navigate('/dashboard?tab=usage'); break;
+      case 'journey': navigate('/dashboard?tab=journey'); break;
+      case 'invoices-model': navigate('/dashboard?tab=invoices-model'); break;
+      case 'consulting': navigate('/dashboard?tab=consulting'); break;
+      case 'security': navigate('/dashboard?tab=security'); break;
+      case 'portal': navigate('/dashboard'); break;
       case 'packages': navigate('/packages'); break;
       case 'plan': navigate('/dashboard?tab=plan'); break;
       case 'invoices': navigate('/dashboard?tab=invoices'); break;
@@ -27,4 +33,4 @@ export function useAlertAction() {
   };
 }
 
-export const ACTION_LABEL = { renew: 'Renew now', addon: 'Buy add-on', packages: 'View packages', plan: 'View plan', invoices: 'View invoices', company: 'Add company', customers: 'View customers', items: 'View items', users: 'Manage users', support: 'Open support', reports: 'View reports' };
+export const ACTION_LABEL = { usage: 'View usage', journey: 'Continue', 'invoices-model': 'View invoices', consulting: 'Consulting', security: 'Security', portal: 'Open', renew: 'Renew now', addon: 'View usage', packages: 'View packages', plan: 'View plan', invoices: 'View invoices', company: 'Add company', customers: 'View customers', items: 'View items', users: 'Manage users', support: 'Open support', reports: 'View reports' };

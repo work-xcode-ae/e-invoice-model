@@ -131,3 +131,26 @@ src/
   services/    api.js (mock API)
   index.css    design tokens + all styles
 ```
+
+## BRD v1.1 front-end build (mock data, ready to swap for the API)
+
+All BRD v1.1 functions are now in the front end. Data lives in `localStorage` through the service files in `src/services/` — each one is the seam to replace with a call to `mei-api` later. Arabic and English everywhere (`src/i18n/ar5.js` holds the new Arabic strings).
+
+### Demo accounts (the 6-digit sign-in code is shown on screen)
+| Who | Email | Password |
+|---|---|---|
+| Customer (manager) | demo@modelfc.ae | Demo@2026 |
+| Model manager | admin@modelfc.ae | Admin@2026 |
+| Customer service / IT / Sales / Owner | cs@ · it@ · sales@ · owner@modelfc.ae | Demo@2026 |
+| Partner | partner@almizan.ae | Demo@2026 |
+
+### What is new
+- **Website:** 5 BRD packages (monthly/annual, setup fee, overage price), how it works, FAQ, news, partner programme, advertise, legal pages, "Are you obligated?" tool, news ticker, video, ads, WhatsApp button, cookie consent, SEO per page, CMS stats.
+- **Registration and payment:** email code, Google/Microsoft sign-in buttons, company fields, versioned terms, referral/invite links, cart with promo codes, card (saved for auto-renew) or bank transfer for annual/Enterprise.
+- **Customer portal:** 7 account stages with next step, documents upload, EmaraTax linking + Peppol ID, usage ledger (100 free/yr → monthly → carry-over → overage, sending never stops), Model tax invoices and credit notes, plan & billing (upgrade/downgrade/renewal/grace/suspension), refund rules, consulting hours, unlink/move provider, API keys, roles Manager/Accountant/Viewer, 2-step sign-in, SSO button to the billing portal. Customer invoicing screens are hidden behind *Settings → Features → Customer invoicing (phase 2)*.
+- **Staff panel (by role):** tasks with round-robin, working-hours SLA and escalation, customer file, billing (gapless INV/CN numbering, bank confirmations, overdue, offers, manual and Enterprise invoices), partners (plans, commissions, statements, payouts), CRM (leads, invites, import, campaigns), content, finance (revenue/deferred, VAT, aging, profit, reconciliation, staff KPIs), packages with scheduled price changes, integration errors, staff & role matrix, audit log, owner dashboard, settings centre with scheduled changes, outbox and demo reset.
+- **Partner portal:** application, plan acceptance, referral code/link, customers, leads, commissions, statements (approve/object, upload invoice), bank details, users.
+- The technical partner name is not shown anywhere in the UI (BR-23); the dev proxy route is `/api/access-point`.
+
+### To confirm with Model before launch
+Package prices, obligation-tool dates and penalties are placeholders and editable in the admin panel. Existing demo data in the browser migrates automatically (seed v8); use *Settings → Demo controls → Reset* for a clean start.

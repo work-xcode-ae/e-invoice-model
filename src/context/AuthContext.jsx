@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import * as api from '../services/api';
 import { can } from '../services/permissions';
+import { levelFor } from '../services/staff';
 
 const AuthContext = createContext(null);
 
@@ -18,7 +19,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const sync = () => {
       setSession((s) => {
-        if (!s) return s;
+        if (!s || s.staff || s.partnerId) return s;
         const fresh = api.getUserById(s.user.id);
         if (!fresh) return s;
         const user = api.publicUser(fresh);
@@ -40,8 +41,14 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  /** Returns the session, or { otpRequired, challengeId, … } when a second factor is needed. */
   const login = async (data) => {
     const s = await api.login(data);
+    if (!s.otpRequired) setSession(s);
+    return s;
+  };
+  const verifyLogin = async (challengeId, code) => {
+    const s = await api.completeLogin(challengeId, code);
     setSession(s);
     return s;
   };
@@ -55,15 +62,29 @@ export function AuthProvider({ children }) {
     setSession(null);
   };
   const refreshUser = (user) => setSession((s) => (s ? { ...s, user } : s));
-  // A team member signs in to the owner's company; their role limits what they can do.
+
+  const role0 = session?.user?.role || null;
+  const isStaff = role0 === 'SuperAdmin' || role0 === 'Staff';
+  const isPartner = role0 === 'Partner';
+  // A team member signs in to the owner's company with their own role.
   const member = session?.member || null;
-  const role = member ? member.role : session?.user?.role || null;
-  const me = member ? { name: member.name, email: member.email } : session?.user ? { name: session.user.fullName, email: session.user.email } : null;
-  const canDo = (perm) => (role === 'SuperAdmin' ? true : can(role, perm));
+  const role = member ? member.role : role0;
+  const me = member ? { id: member.id, name: member.name, email: member.email }
+    : session?.partnerUser ? { id: session.partnerUser.id, name: session.partnerUser.name, email: session.partnerUser.email }
+    : session?.user ? { id: session.user.role === 'Owner' ? 'owner' : session.user.id, name: session.user.fullName, email: session.user.email } : null;
+  const staffRoles = session?.user?.staffRoles || (role0 === 'SuperAdmin' ? ['Manager'] : []);
+  /** Customer permission (section 4.2) — staff can do everything customers can when looking at a company. */
+  const canDo = (perm) => (isStaff ? true : can(role, perm));
+  /** Staff permission level (section 4.1): 'full' | 'approve' | 'request' | 'tech' | 'own' | 'view' | null. */
+  const staffLevel = (perm) => (isStaff ? levelFor(staffRoles, perm) : null);
 
   return (
     <AuthContext.Provider
-      value={{ user: session?.user || null, isAuthenticated: !!session, isAdmin: session?.user?.role === 'SuperAdmin', member, role, me, can: canDo, login, register, logout, refreshUser, cart, setCart }}
+      value={{
+        user: session?.user || null, isAuthenticated: !!session, isAdmin: isStaff, isStaff, isPartner,
+        partnerId: session?.partnerId || null, partnerUser: session?.partnerUser || null,
+        staffRoles, staffLevel, member, role, me, can: canDo, login, verifyLogin, register, logout, refreshUser, cart, setCart,
+      }}
     >
       {children}
     </AuthContext.Provider>

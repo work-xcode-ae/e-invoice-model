@@ -8,20 +8,24 @@ import LangSwitch from './LangSwitch';
 import NotificationBell from './NotificationBell';
 
 const links = [
-  { to: '/', label: 'Home', end: true },
+  { to: '/how-it-works', label: 'How it works' },
   { to: '/packages', label: 'Packages' },
-  { to: '/requirements', label: 'Requirements' },
+  { to: '/check', label: 'Are you obligated?' },
+  { to: '/partners', label: 'Partners' },
+  { to: '/news', label: 'News' },
   { to: '/contact', label: 'Contact' },
 ];
 
 // Pages whose top section is dark, so the navbar starts transparent with white text.
-const DARK_TOP = ['/', '/packages', '/requirements', '/contact', '/cart'];
+const DARK_TOP = ['/', '/packages', '/requirements', '/contact', '/cart', '/how-it-works', '/faq', '/news', '/partners', '/advertise', '/check', '/terms', '/privacy', '/refund-policy', '/disclaimer', '/partner-agreement'];
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const { isAuthenticated, isAdmin, user, logout, cart, me, role, can } = useAuth();
+  const { isAuthenticated, isAdmin, isPartner, user, logout, cart, me, role, can } = useAuth();
+  const home = isAdmin ? '/admin' : isPartner ? '/partner' : '/dashboard';
+  const homeLabel = isAdmin ? 'Staff panel' : isPartner ? 'Partner portal' : 'Dashboard';
   const { t } = useLang();
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -45,7 +49,7 @@ export default function Navbar() {
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
   }, [menu]);
 
-  const onDark = DARK_TOP.includes(pathname) && !scrolled && !open;
+  const onDark = (DARK_TOP.includes(pathname) || pathname.startsWith('/news/')) && !scrolled && !open;
   const solid = !onDark;
   const initials = me?.name?.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
   const doLogout = () => { logout(); navigate('/'); };
@@ -66,10 +70,10 @@ export default function Navbar() {
               <ShoppingBag size={19} /><span className="count">1</span>
             </Link>
           )}
-          {isAuthenticated && !isAdmin && <NotificationBell />}
+          {isAuthenticated && !isAdmin && !isPartner && <NotificationBell />}
           {isAuthenticated && (
-            <NavLink to={isAdmin ? '/admin' : '/dashboard'} className={({ isActive }) => `nav-cta nav-dash ${isActive ? 'is-here' : ''}`}>
-              {isAdmin ? <ShieldCheck size={16} /> : <LayoutDashboard size={16} />} {t(isAdmin ? 'Admin panel' : 'Dashboard')}
+            <NavLink to={home} className={({ isActive }) => `nav-cta nav-dash ${isActive ? 'is-here' : ''}`}>
+              {isAdmin ? <ShieldCheck size={16} /> : <LayoutDashboard size={16} />} {t(homeLabel)}
             </NavLink>
           )}
           {isAuthenticated ? (
@@ -84,10 +88,10 @@ export default function Navbar() {
                   <div className="user-dd-head">
                     <strong>{me.name}</strong>
                     <span>{me.email}</span>
-                    {!isAdmin && <span className="role-chip">{t(role)} · {user.company?.name || ''}</span>}
+                    {!isAdmin && !isPartner && <span className="role-chip">{t(role === 'Owner' ? 'Manager' : role)} · {user.company?.name || ''}</span>}
                   </div>
-                  <Link to={isAdmin ? '/admin' : '/dashboard'} role="menuitem">{isAdmin ? <ShieldCheck size={16} /> : <LayoutDashboard size={16} />} {t(isAdmin ? 'Admin panel' : 'Dashboard')}</Link>
-                  {!isAdmin && can('billing') && <Link to="/packages" role="menuitem"><CreditCard size={16} /> {t(user.subscription ? 'Manage package' : 'Choose a package')}</Link>}
+                  <Link to={home} role="menuitem">{isAdmin ? <ShieldCheck size={16} /> : <LayoutDashboard size={16} />} {t(homeLabel)}</Link>
+                  {!isAdmin && !isPartner && can('billing') && <Link to="/packages" role="menuitem"><CreditCard size={16} /> {t(user.subscription ? 'Manage package' : 'Choose a package')}</Link>}
                   <button className="danger" onClick={doLogout} role="menuitem"><LogOut size={16} /> {t('Log out')}</button>
                 </div>
               )}
@@ -100,7 +104,7 @@ export default function Navbar() {
           )}
         </div>
 
-        {isAuthenticated && !isAdmin && <div className="bell-mobile"><NotificationBell /></div>}
+        {isAuthenticated && !isAdmin && !isPartner && <div className="bell-mobile"><NotificationBell /></div>}
         <button className="nav-toggle" onClick={() => setOpen((o) => !o)} aria-label={t(open ? 'Close menu' : 'Open menu')} aria-expanded={open}>
           {open ? <X size={22} /> : <Menu size={22} />}
         </button>
@@ -118,7 +122,7 @@ export default function Navbar() {
           <div className="m-actions">
             {isAuthenticated ? (
               <>
-                <Link to={isAdmin ? '/admin' : '/dashboard'} className="btn btn-dark btn-lg"><LayoutDashboard size={18} /> {t(isAdmin ? 'Admin panel' : 'Dashboard')}</Link>
+                <Link to={home} className="btn btn-dark btn-lg"><LayoutDashboard size={18} /> {t(homeLabel)}</Link>
                 <button className="btn btn-outline btn-lg" onClick={doLogout}><LogOut size={18} /> {t('Log out')}</button>
               </>
             ) : (

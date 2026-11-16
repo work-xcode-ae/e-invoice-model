@@ -41,7 +41,7 @@ function gridDef(id, r, vatRows, t) {
         columns: [
           { key: 'id', label: 'Invoice', ltr: true, strong: true }, { key: 'issueDate', label: 'Issue date', type: 'date' }, { key: 'customerName', label: 'Customer' },
           { key: 'source', label: 'Source', translate: true }, { key: 'status', label: 'Status', type: 'badge' }, { key: 'net', label: 'Net', type: 'money' },
-          { key: 'vat', label: 'VAT', type: 'money' }, { key: 'total', label: 'Total', type: 'money' }, { key: 'wlInvoiceId', label: 'Qvalia ID', ltr: true },
+          { key: 'vat', label: 'VAT', type: 'money' }, { key: 'total', label: 'Total', type: 'money' }, { key: 'wlInvoiceId', label: 'Reference ID', ltr: true },
         ],
         rows: r.invoices.map((i) => ({ ...i, net: +(i.subtotal - (i.discount || 0)).toFixed(2) })), initialSort: { key: 'issueDate', dir: 'desc' },
       };
@@ -61,7 +61,7 @@ export default function CompanyReports() {
 
   const exportIt = () => exportSheets(`${(user.company?.name || 'company').replace(/\W+/g, '-')}-report-${rangeKey(range)}.xlsx`, [
     ['Summary', [['Metric', 'Value'], ['Period', `${range.from} – ${range.to}`], ['Invoices', r.total], ['Passed', r.success], ['Failed', r.failed], ['In progress', r.inProgress], ['Amount invoiced incl. VAT (AED)', +r.amount.toFixed(2)], ['Net amount (AED)', +r.net.toFixed(2)], ['VAT (AED)', +r.vatTotal.toFixed(2)], ['Average invoice (AED)', +r.avg.toFixed(2)]]],
-    ['Invoices', [['Invoice', 'Date', 'Customer', 'Source', 'Status', 'Subtotal', 'Discount', 'VAT', 'Total', 'Qvalia ID'], ...r.invoices.map((i) => [i.id, i.issueDate, i.customerName, i.source, i.status, i.subtotal, i.discount || 0, i.vat, i.total, i.wlInvoiceId || ''])]],
+    ['Invoices', [['Invoice', 'Date', 'Customer', 'Source', 'Status', 'Subtotal', 'Discount', 'VAT', 'Total', 'Reference ID'], ...r.invoices.map((i) => [i.id, i.issueDate, i.customerName, i.source, i.status, i.subtotal, i.discount || 0, i.vat, i.total, i.wlInvoiceId || ''])]],
     ['Customers', [['Customer', 'Invoices', 'VAT', 'Total incl. VAT'], ...r.customers.map((c) => [c.label, c.count, +c.vat.toFixed(2), +c.value.toFixed(2)])]],
     ['Items', [['Item', 'Quantity', 'Unit', 'Net amount'], ...r.items.map((i) => [i.label, i.qty, i.unit, +i.value.toFixed(2)])]],
     ['VAT summary', [['VAT category', 'Rate', 'Taxable amount', 'VAT'], ...vatRows.map((v) => [`${v.code} · ${v.label}`, `${v.rate}%`, +v.taxable.toFixed(2), +v.tax.toFixed(2)])]],

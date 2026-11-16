@@ -14,11 +14,15 @@ import AlertBanner, { InvoicesLeftPill } from '../components/AlertBanner';
 import Invoices, { StatusBadge, InvoiceDetail } from './dashboard/Invoices';
 import MasterData from './dashboard/MasterData';
 import CompanyForm from './dashboard/CompanyForm';
-import RefundSection, { LockedNotice } from './dashboard/Refund';
 import { invoicesLeft } from '../services/notifications';
 import { ACTIVE_STATUSES } from '../services/invoices';
 import { updateUser } from '../services/api';
-import { Package as PackageIcon, BookUser, Tags, BarChart3, LifeBuoy, Check, Minus, KeyRound } from 'lucide-react';
+import { Package as PackageIcon, BookUser, Tags, BarChart3, LifeBuoy, Check, Minus, KeyRound, Route, Gauge, GraduationCap, ShieldCheck, Activity } from 'lucide-react';
+import { PortalOverview, Journey, Usage, ModelInvoices, PlanBilling, Consulting, Security, PortalButton, TermsGate } from './dashboard/Portal';
+import ApiKeys from './dashboard/ApiKeys';
+import { stageOf, STAGE_BADGE } from '../services/lifecycle';
+import { feature } from '../services/platform';
+import { useDbVersion } from '../hooks/useDb';
 import CompanyReports from './dashboard/CompanyReports';
 import CustomerSupport from './dashboard/CustomerSupport';
 import { PERMISSIONS, ROLES, TEAM_ROLES, ROLE_HINT, normalizeRole } from '../services/permissions';
@@ -76,7 +80,7 @@ function Overview({ user, setTab }) {
     { t: 'Add users', done: team > 1, action: team === 1 && can('users') && <button className="btn btn-outline btn-sm" onClick={() => setTab('users')}>{t('Add')}</button> },
     { t: 'Add your customers', done: !!user.customers?.length, action: !user.customers?.length && can('masterdata.edit') && <button className="btn btn-outline btn-sm" onClick={() => setTab('customers')}>{t('Add')}</button> },
     { t: 'Add your items', done: !!user.products?.length, action: !user.products?.length && can('masterdata.edit') && <button className="btn btn-outline btn-sm" onClick={() => setTab('items')}>{t('Add')}</button> },
-    { t: 'Link with EmaraTax', done: false },
+    { t: 'Link with EmaraTax', done: user.linking?.status === 'Linked' },
   ];
   const progress = steps.filter((x) => x.done).length;
 
@@ -222,166 +226,12 @@ function Checklist({ steps, progress, compact }) {
   );
 }
 
-/* ================= Plan & billing ================= */
-function PlanBilling({ user, onSaved, initialDowngrade }) {
-  const { t, locale } = useLang();
-  const { setCart } = useAuth();
-  const navigate = useNavigate();
-  const s = user.subscription;
-  const [busy, setBusy] = useState(null);
-  const [error, setError] = useState('');
-  const [confirm, setConfirm] = useState(initialDowngrade || null);
-
-  if (!s) {
-    return (
-      <div className="card">
-        <h3>{t('No active package')}</h3>
-        <p>{t('Choose a package to get started.')}</p>
-        <Link to="/packages" className="btn btn-primary mt-2">{t('View packages')}</Link>
-      </div>
-    );
-  }
-
-  const current = getPackage(s.packageId);
-  const doUpgrade = (pkg) => {
-    const q = upgradeQuote(s, pkg.id);
-    setCart({ type: 'upgrade', packageId: pkg.id, price: q.amount, remainingDays: q.remainingDays });
-    navigate('/cart');
-  };
-  const doRenew = (months = 1) => { setCart({ type: 'package', packageId: s.packageId, months }); navigate('/cart'); };
-  const doDowngrade = async (pkg) => {
-    setBusy(pkg.id); setError('');
-    try { onSaved(await scheduleDowngrade(user.id, pkg.id)); setConfirm(null); }
-    catch (e) { setError(e); }
-    finally { setBusy(null); }
-  };
-  const undo = async () => { setBusy('undo'); onSaved(await cancelPendingChange(user.id)); setBusy(null); };
-
-  return (
-    <>
-      <div className="plan-hero card">
-        <div>
-          <span className="plan-eyebrow">{t('Current plan')}</span>
-          <h2 className="mb-0">{t(s.packageName)} <span className={`badge ${s.locked ? 'red' : 'green'}`} style={{ verticalAlign: 'middle' }}>{t(s.status)}</span></h2>
-          <p className="mb-0">{t('{price} / month · {tx} invoices · {users} users', { price: formatMoney(current.price), tx: current.transactions.toLocaleString(), users: current.users })}</p>
-        </div>
-        <div className="plan-dates">
-          <div><span>{t('Started')}</span><b>{fmtDate(s.startDate, locale)}</b></div>
-          <div><span>{t('Renews / ends')}</span><b>{fmtDate(s.endDate, locale)}</b></div>
-          <div><span>{t('Days left')}</span><b>{daysLeft(s.endDate)}</b></div>
-        </div>
-        {!s.locked && (
-        <div className="flex gap-1 wrap">
-          <button className="btn btn-white" onClick={() => doRenew(1)}><RefreshCcw size={16} /> {t('Renew 1 month')}</button>
-          <button className="btn btn-ghost-light" onClick={() => doRenew(3)}>{t('Renew 3 months · save 17%')}</button>
-        </div>
-        )}
-      </div>
-
-      {s.locked && <div className="mt-2"><LockedNotice /></div>}
-
-      {s.pendingChange && (
-        <div className="alert info mt-2" style={{ alignItems: 'center' }}>
-          <CalendarClock size={18} />
-          <span style={{ flex: 1 }}>{t('Your plan switches to {name} on {date}.', { name: t(s.pendingChange.packageName), date: fmtDate(s.pendingChange.effectiveDate, locale) })}</span>
-          <button className="btn btn-outline btn-sm" onClick={undo} disabled={busy === 'undo'}><X size={14} /> {t('Cancel change')}</button>
-        </div>
-      )}
-      {error && <div className="alert error mt-2"><AlertCircle size={18} /> <span style={{ flex: 1 }}>{errText(t, error)}</span> <button className="btn btn-outline btn-sm" onClick={() => document.querySelector('[data-tab=users]')?.click()}>{t('Manage users')}</button></div>}
-
-      {!s.locked && <>
-      <h3 className="mt-3">{t('Change plan')}</h3>
-      <div className="plan-options">
-        {packages.map((pkg) => {
-          const act = planAction(s, pkg);
-          const q = act === 'upgrade' ? upgradeQuote(s, pkg.id) : null;
-          const isPending = s.pendingChange?.packageId === pkg.id;
-          return (
-            <div key={pkg.id} className={`plan-opt ${act === 'renew' ? 'is-current' : ''} ${act === 'upgrade' ? 'is-up' : ''}`}>
-              <div className="flex between items-center">
-                <strong className="plan-opt-name">{t(pkg.name)}</strong>
-                {act === 'renew' && <span className="badge blue">{t('Current')}</span>}
-                {act === 'upgrade' && <span className="badge green"><ArrowUpCircle size={12} /> {t('Upgrade')}</span>}
-                {act === 'downgrade' && <span className="badge gray"><ArrowDownCircle size={12} /> {t('Downgrade')}</span>}
-              </div>
-              <div className="plan-opt-price">{formatMoney(pkg.price)}<span>{t('/mo')}</span></div>
-              <ul>
-                <li><b>{pkg.transactions.toLocaleString()}</b> {t('invoices / month')} <Diff a={pkg.transactions} b={current.transactions} /></li>
-                <li><b>{pkg.users}</b> {t('users')} <Diff a={pkg.users} b={current.users} /></li>
-                <li>{t(pkg.support)}</li>
-              </ul>
-
-              {act === 'upgrade' && (
-                <>
-                  <div className="plan-opt-note">{t('Pay {amount} now, prorated for {days} days. Applies immediately.', { amount: formatMoney(q.amount), days: q.remainingDays })}</div>
-                  <button className="btn btn-primary btn-block" onClick={() => doUpgrade(pkg)}>{t('Upgrade to {name}', { name: t(pkg.name) })}</button>
-                </>
-              )}
-              {act === 'renew' && (
-                <>
-                  <div className="plan-opt-note">{t('You\'re on this plan.')}</div>
-                  <button className="btn btn-outline btn-block" onClick={() => doRenew(1)}>{t('Renew')}</button>
-                </>
-              )}
-              {act === 'downgrade' && (
-                isPending ? (
-                  <div className="plan-opt-note">{t('Scheduled for {date}.', { date: fmtDate(s.pendingChange.effectiveDate, locale) })}</div>
-                ) : confirm === pkg.id ? (
-                  <>
-                    <div className="plan-opt-note warn">{t('Switches on {date}. Max {users} users, {tx} invoices/mo.', { date: fmtDate(s.endDate, locale), users: pkg.users, tx: pkg.transactions })}</div>
-                    <div className="flex gap-1">
-                      <button className="btn btn-dark btn-sm" style={{ flex: 1 }} onClick={() => doDowngrade(pkg)} disabled={busy === pkg.id}>
-                        {busy === pkg.id ? <Loader2 size={14} className="spin" /> : t('Confirm')}
-                      </button>
-                      <button className="btn btn-outline btn-sm" onClick={() => setConfirm(null)}>{t('Back')}</button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="plan-opt-note">{t('Applies from your next billing period.')}</div>
-                    <button className="btn btn-outline btn-block" onClick={() => setConfirm(pkg.id)}>{t('Switch to {name}', { name: t(pkg.name) })}</button>
-                  </>
-                )
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      </>}
-
-      <div className="card mt-3">
-        <div className="flex between items-center mb-2">
-          <h3 className="mb-0">{t('Billing history')}</h3>
-          {!s.locked && <Link to="/packages#addons" className="btn btn-outline btn-sm"><PackagePlus size={14} /> {t('Buy add-on')}</Link>}
-        </div>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>{t('Date')}</th><th>{t('Description')}</th><th>{t('Payment ID')}</th><th>{t('Amount')}</th><th>{t('Status')}</th></tr></thead>
-            <tbody>
-              {(user.payments || []).slice().reverse().map((p) => (
-                <tr key={p.id}>
-                  <td>{fmtDate(p.date, locale)}</td><td>{typeof p.description === 'string' ? p.description : t(p.description.key, { ...p.description.vars, name: t(p.description.vars.name) })}</td><td className="muted"><code dir="ltr">{p.id}</code></td>
-                  <td><b>{formatMoney(p.total)}</b></td><td><span className={`badge ${p.status === 'Paid' ? 'green' : 'gray'}`}><Receipt size={12} /> {t(p.status)}</span></td>
-                </tr>
-              ))}
-              {!(user.payments || []).length && <tr><td colSpan="5" className="muted">{t('No payments yet.')}</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <RefundSection />
-    </>
-  );
-}
-
-const Diff = ({ a, b }) => (a === b ? null : <span dir="ltr" className={`diff ${a > b ? 'up' : 'down'}`}>{a > b ? '+' : '−'}{Math.abs(a - b).toLocaleString()}</span>);
-
 /* ================= Users ================= */
 function TeamUsers({ user, onSaved, setTab }) {
   const { t, locale } = useLang();
   const { member } = useAuth();
   const [f, setF] = useState({ name: '', email: '', role: 'Accountant' });
+  const roleOpts = ROLES;
   const [invite, setInvite] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -420,7 +270,7 @@ function TeamUsers({ user, onSaved, setTab }) {
         <table>
           <thead><tr><th>{t('Name')}</th><th>{t('Email')}</th><th>{t('Role')}</th><th>{t('Status')}</th><th /></tr></thead>
           <tbody>
-            <tr><td>{user.fullName} {!member && t('(You)')}</td><td>{user.email}</td><td><span className="badge orange">{t('Owner')}</span></td><td><span className="badge green">{t('Active')}</span></td><td /></tr>
+            <tr><td>{user.fullName} {!member && t('(You)')}</td><td>{user.email}</td><td><span className="badge orange">{t('Manager')} · {t('owner')}</span></td><td><span className="badge green">{t('Active')}</span></td><td /></tr>
             {team.map((m) => (
               <tr key={m.id} className={m.status !== 'Active' ? 'row-muted' : ''}>
                 <td>{m.name} {member?.id === m.id && t('(You)')}</td><td dir="ltr">{m.email}</td>
@@ -479,10 +329,10 @@ function TeamUsers({ user, onSaved, setTab }) {
         <table className="perm-table">
           <thead><tr><th>{t('Permission')}</th>{ROLES.map((r) => <th key={r}>{t(r)}</th>)}</tr></thead>
           <tbody>
-            {PERMISSIONS.map((p) => (
+            {PERMISSIONS.filter((p) => !p.phase2 || feature('customerInvoicing')).map((p) => (
               <tr key={p.id}>
                 <td>{t(p.label)}</td>
-                {ROLES.map((r) => <td key={r}>{p.roles.includes(r) ? <Check size={17} className="perm-yes" aria-label={t('Yes')} /> : <Minus size={17} className="perm-no" aria-label={t('No')} />}</td>)}
+                {ROLES.map((r) => <td key={r}>{p.roles.includes(r) ? (p.view?.includes(r) ? <span className="perm-lv view">{t('View')}</span> : <Check size={17} className="perm-yes" aria-label={t('Yes')} />) : <Minus size={17} className="perm-no" aria-label={t('No')} />}</td>)}
               </tr>
             ))}
           </tbody>
@@ -494,21 +344,28 @@ function TeamUsers({ user, onSaved, setTab }) {
 
 /* ================= Page ================= */
 const NAV_GROUPS = [
-  { label: 'Invoicing', items: [
+  { label: 'My account', items: [
     { id: 'overview', icon: LayoutDashboard, label: 'Overview', perm: 'dashboard' },
+    { id: 'journey', icon: Route, label: 'Onboarding & linking', perm: 'usage' },
+    { id: 'usage', icon: Gauge, label: 'Usage', perm: 'usage' },
+    { id: 'invoices-model', icon: Receipt, label: 'Model invoices', perm: 'modelInvoices' },
+    { id: 'plan', icon: CreditCard, label: 'Plan & billing', perm: 'billing' },
+    { id: 'consulting', icon: GraduationCap, label: 'Consulting', perm: 'support' },
+    { id: 'support', icon: LifeBuoy, label: 'Support', perm: 'support' },
+  ] },
+  { label: 'Company', items: [
+    { id: 'company', icon: Building2, label: 'Company', perm: 'company' },
+    { id: 'users', icon: Users, label: 'Users', perm: 'users' },
+    { id: 'api', icon: KeyRound, label: 'API keys', perm: 'api' },
+    { id: 'security', icon: ShieldCheck, label: 'Security & terms', perm: 'dashboard' },
+  ] },
+  { label: 'Invoicing (phase 2)', phase2: true, items: [
+    { id: 'invoicing', icon: Activity, label: 'Invoicing overview', perm: 'dashboard' },
     { id: 'invoices', icon: FileText, label: 'Invoices', perm: 'dashboard' },
     { id: 'reports', icon: BarChart3, label: 'Reports', perm: 'reports' },
-  ] },
-  { label: 'Master data', items: [
     { id: 'customers', icon: BookUser, label: 'Customers', perm: 'dashboard' },
     { id: 'categories', icon: Tags, label: 'Categories', perm: 'dashboard' },
     { id: 'items', icon: PackageIcon, label: 'Items', perm: 'dashboard' },
-  ] },
-  { label: 'Account', items: [
-    { id: 'plan', icon: CreditCard, label: 'Plan & billing', perm: 'billing' },
-    { id: 'company', icon: Building2, label: 'Company', perm: 'company' },
-    { id: 'users', icon: Users, label: 'Users', perm: 'users' },
-    { id: 'support', icon: LifeBuoy, label: 'Support', perm: 'support' },
   ] },
 ];
 
@@ -518,9 +375,11 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
-  const groups = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => can(i.perm)) })).filter((g) => g.items.length);
+  useDbVersion();
+  const invoicingOn = feature('customerInvoicing');
+  const groups = NAV_GROUPS.filter((g) => !g.phase2 || invoicingOn).map((g) => ({ ...g, items: g.items.filter((i) => can(i.perm)) })).filter((g) => g.items.length);
   const allowed = groups.flatMap((g) => g.items);
-  const asked = params.get('tab') === 'master' ? 'customers' : params.get('tab'); // old links
+  const asked = params.get('tab') === 'master' ? 'customers' : params.get('tab') === 'addon' ? 'usage' : params.get('tab'); // old links
   const tab = allowed.some((n) => n.id === asked) ? asked : 'overview';
   const setTab = (id) => setParams(id === 'overview' ? {} : { tab: id }, { replace: false });
   const flash = location.state?.flash;
@@ -554,7 +413,11 @@ export default function Dashboard() {
             <h1 style={{ fontSize: 26 }}>{t('Welcome, {name}', { name: me.name.split(' ')[0] })} 👋</h1>
             <p className="muted mb-0">{user.company?.name || t('Complete the steps below to start invoicing.')}{member && <> · <span className="role-chip" style={{ marginTop: 0 }}>{t(role)}</span></>}</p>
           </div>
-          <InvoicesLeftPill />
+          <div className="flex items-center gap-1 wrap">
+            <span className={`badge ${STAGE_BADGE[stageOf(user)]}`}>{t(stageOf(user))}</span>
+            {invoicingOn && <InvoicesLeftPill />}
+            <PortalButton user={user} />
+          </div>
           <div className="dash-tabs">
             {allowed.map(({ id, label }) => (
               <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{t(label)}</button>
@@ -565,8 +428,16 @@ export default function Dashboard() {
         {flash && <div className="alert success mb-2"><CheckCircle2 size={18} /> {typeof flash === 'string' ? t(flash) : t(flash.key, { ...flash.vars, name: t(flash.vars?.name), ...(flash.dateVar ? { [flash.dateVar]: fmtDate(flash.vars[flash.dateVar], locale) } : {}) })}</div>}
 
         <AlertBanner />
+        <TermsGate user={user} />
 
-        {tab === 'overview' && <Overview user={user} setTab={setTab} />}
+        {tab === 'overview' && <PortalOverview user={user} setTab={setTab} />}
+        {tab === 'invoicing' && <Overview user={user} setTab={setTab} />}
+        {tab === 'journey' && <Journey user={user} />}
+        {tab === 'usage' && <Usage user={user} />}
+        {tab === 'invoices-model' && <ModelInvoices user={user} />}
+        {tab === 'consulting' && <Consulting user={user} />}
+        {tab === 'security' && <Security user={user} />}
+        {tab === 'api' && <ApiKeys user={user} />}
         {tab === 'invoices' && <Invoices setTab={setTab} />}
         {tab === 'customers' && <MasterData key="customers" page="customers" />}
         {tab === 'categories' && <MasterData key="categories" page="categories" />}

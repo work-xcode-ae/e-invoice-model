@@ -42,7 +42,7 @@ export function InvoiceDetail({ inv, onClose, canAct = true, userId }) {
           <div><span>{t('Source')}</span><b>{t(inv.source)}</b></div>
           <div><span>{t('Queue ID')}</span><b dir="ltr">{inv.queueId}</b></div>
           <div><span>{t('Retry count')}</span><b dir="ltr">{inv.retryCount} / {MAX_RETRIES}</b></div>
-          <div><span>{t('Qvalia integration ID')}</span><b dir="ltr" style={{ fontSize: 12.5 }}>{inv.wlInvoiceId || '—'}</b></div>
+          <div><span>{t('Access point reference')}</span><b dir="ltr" style={{ fontSize: 12.5 }}>{inv.wlInvoiceId || '—'}</b></div>
           {inv.dueDate && <div><span>{t('Due date')}</span><b>{fmtDate(inv.dueDate, locale)}</b></div>}
           {inv.buyerReference && <div><span>{t('Buyer reference')}</span><b dir="ltr">{inv.buyerReference}</b></div>}
           {inv.externalRef && <div><span>{t('Your reference')}</span><b dir="ltr">{inv.externalRef}</b></div>}

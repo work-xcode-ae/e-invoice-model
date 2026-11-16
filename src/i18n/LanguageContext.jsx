@@ -3,8 +3,9 @@ import arBase from './ar';
 import ar2 from './ar2';
 import ar3 from './ar3';
 import ar4 from './ar4';
+import ar5 from './ar5';
 
-const ar = { ...arBase, ...ar2, ...ar3, ...ar4 };
+const ar = { ...arBase, ...ar2, ...ar3, ...ar4, ...ar5 };
 import { setCurrencyLang } from '../data/packages';
 
 /**

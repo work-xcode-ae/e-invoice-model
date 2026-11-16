@@ -4,9 +4,10 @@ import { useLang } from '../../i18n/LanguageContext';
 import { saveCompany } from '../../services/api';
 import { sellerProblems } from '../../services/qvalia';
 import { COUNTRIES, EMIRATES } from '../../data/ubl';
+import { getPlatform } from '../../services/platform';
 
 const blank = {
-  name: '', legalName: '', tradeLicense: '', trn: '', peppolId: '',
+  name: '', legalName: '', tradeLicense: '', trn: '', peppolId: '', tin: '', vatRegistered: true, licenceIssuer: '', licenceExpiry: '', activity: '', emaraTaxEmail: '',
   street: '', additionalStreet: '', city: '', postalZone: '', emirate: 'Dubai', country: 'AE',
   email: '', phone: '', iban: '', bic: '', bankAccountName: '',
 };
@@ -26,7 +27,9 @@ export default function CompanyForm({ user, onSaved }) {
     const er = {};
     if (!f.name.trim()) er.name = 'Required';
     if (!f.tradeLicense.trim()) er.tradeLicense = 'Required';
-    if (!/^\d{15}$/.test(f.trn)) er.trn = 'TRN must be 15 digits';
+    if (f.vatRegistered !== false && !/^\d{15}$/.test(f.trn)) er.trn = 'TRN must be 15 digits';
+    if (f.tin && !/^\d{10}$/.test(f.tin)) er.tin = 'TIN must be 10 digits.';
+    if (f.licenceExpiry && f.licenceExpiry <= new Date().toISOString().slice(0, 10)) er.licenceExpiry = 'The licence has expired. Renew it first.';
     if (f.iban && !/^AE\d{21}$/.test(f.iban.replace(/\s/g, ''))) er.iban = 'UAE IBAN: AE + 21 digits';
     setErr(er);
     if (Object.keys(er).length) return;
@@ -62,7 +65,13 @@ export default function CompanyForm({ user, onSaved }) {
           {Field({ k: 'legalName', label: 'Legal (registered) name', hint: 'As on the trade licence. Defaults to the trading name.' })}
           {Field({ k: 'trn', label: 'TRN *', ltr: true, inputMode: 'numeric', maxLength: 15, placeholder: '100XXXXXXXXXXXX' })}
           {Field({ k: 'tradeLicense', label: 'Trade licence number *', ltr: true })}
-          {Field({ k: 'peppolId', label: 'Peppol ID', ltr: true, hint: 'Leave empty to use the TRN.' })}
+          {Field({ k: 'tin', label: 'TIN (10 digits)', ltr: true, inputMode: 'numeric', maxLength: 10, hint: 'Your Peppol ID is 0235:TIN, retrieved after linking.' })}
+          <div className="field"><label>{t('Peppol ID')}</label><input className="input" dir="ltr" value={user.linking?.peppolId || '—'} readOnly /><span className="hint">{t('Read only. Retrieved from the technical partner after EmaraTax linking.')}</span></div>
+          <label className="checkbox field"><input type="checkbox" checked={f.vatRegistered === false} onChange={(e) => { setOk(false); setF({ ...f, vatRegistered: !e.target.checked }); }} /> {t('Not registered for VAT')}</label>
+          <div className="field"><label>{t('Issuing authority')}</label><select className="input" value={f.licenceIssuer} onChange={set('licenceIssuer')}><option value="">—</option>{getPlatform().registration.licenceIssuers.map((x) => <option key={x}>{x}</option>)}</select></div>
+          {Field({ k: 'licenceExpiry', label: 'Licence expiry date', ltr: true, type: 'date' })}
+          <div className="field"><label>{t('Business activity')}</label><select className="input" value={f.activity} onChange={set('activity')}><option value="">—</option>{getPlatform().registration.activities.map((x) => <option key={x} value={x}>{t(x)}</option>)}</select></div>
+          {Field({ k: 'emaraTaxEmail', label: 'Email registered in EmaraTax', ltr: true, type: 'email' })}
         </div>
       </fieldset>
 

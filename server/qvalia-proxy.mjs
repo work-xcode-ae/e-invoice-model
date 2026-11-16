@@ -1,7 +1,7 @@
 // Minimal backend proxy for the Qvalia Transaction API (no dependencies, Node 18+).
 //
 // Why: the Qvalia API key must stay on a server, and browsers cannot call api.qvalia.com directly (CORS).
-// The web app posts to  /api/qvalia/transaction/{accountRegNo}/invoices/outgoing  and this proxy
+// The web app posts to  /api/access-point/transaction/{accountRegNo}/invoices/outgoing  and this proxy
 // forwards it to Qvalia with the Authorization header, keeping the Idempotency-Key.
 //
 // Run:   QVALIA_API_KEY=xxxx node server/qvalia-proxy.mjs
@@ -9,8 +9,8 @@
 //        QVALIA_ENV       "test" (default) or "production"
 //        PORT             default 8787
 //        ALLOWED_ORIGIN   default http://localhost:5173
-// Then in the app: Admin → Integrations → Mode "Live (backend proxy)", Proxy URL "/api/qvalia".
-// (vite.config.js forwards /api/qvalia to this proxy during development.)
+// Then in the app: Admin → Integrations → Mode "Live (backend proxy)", Proxy URL "/api/access-point".
+// (vite.config.js forwards /api/access-point to this proxy during development.)
 
 import http from 'node:http';
 
@@ -18,7 +18,7 @@ const PORT = Number(process.env.PORT || 8787);
 const KEY = process.env.QVALIA_API_KEY || '';
 const ORIGIN = process.env.ALLOWED_ORIGIN || 'http://localhost:5173';
 const BASE = { test: 'https://api-test.qvalia.com', production: 'https://api.qvalia.com' };
-const ROUTE = /^\/api\/qvalia\/transaction\/([\w.-]{1,64})\/invoices\/outgoing$/;
+const ROUTE = /^\/api\/access-point\/transaction\/([\w.-]{1,64})\/invoices\/outgoing$/;
 const MAX_BODY = 2 * 1024 * 1024;
 
 const send = (res, status, body, headers = {}) => {
@@ -31,7 +31,7 @@ http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     return send(res, 204, '', { 'Access-Control-Allow-Methods': 'POST, GET', 'Access-Control-Allow-Headers': 'Content-Type, Idempotency-Key, Accept' });
   }
-  if (req.method === 'GET' && url.pathname === '/api/qvalia/health') {
+  if (req.method === 'GET' && url.pathname === '/api/access-point/health') {
     return send(res, 200, { ok: true, environment: process.env.QVALIA_ENV || 'test', apiKeyConfigured: Boolean(KEY) });
   }
   const m = url.pathname.match(ROUTE);

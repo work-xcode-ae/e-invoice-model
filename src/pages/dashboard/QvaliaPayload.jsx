@@ -41,7 +41,7 @@ export default function QvaliaPayload({ inv, userId }) {
   return (
     <div className="qv-box">
       <div className="flex between items-center wrap gap-1">
-        <h4 className="mb-0">{t('E-invoice sent to Qvalia')}</h4>
+        <h4 className="mb-0">{t('E-invoice sent to the access point')}</h4>
         <span className="badge blue" dir="ltr">{PROFILES[cfg.profile]?.label || cfg.profile}</span>
       </div>
       <div className="qv-req" dir="ltr">
@@ -63,7 +63,7 @@ export default function QvaliaPayload({ inv, userId }) {
       </div>
       <pre className="code qv-code" dir="ltr">{text}</pre>
       <p className="muted mb-0" style={{ fontSize: 12.5 }}>
-        <Send size={12} /> {t(cfg.mode === 'proxy' ? 'Live: sent through your backend proxy to Qvalia {env}.' : 'Simulation: the request is not sent. Switch to live in Admin → Integrations.', { env: cfg.environment })}
+        <Send size={12} /> {t(cfg.mode === 'proxy' ? 'Live: sent through your backend proxy to the access point {env}.' : 'Simulation: the request is not sent. Switch to live in Admin → Integrations.', { env: cfg.environment })}
       </p>
     </div>
   );

@@ -82,13 +82,35 @@ export function setTeamUserStatus(ownerId, memberId, status) {
   updateUser(ownerId, (u) => ({ teamUsers: (u.teamUsers || []).map((m) => (m.id === memberId ? { ...m, status } : m)) }));
 }
 
-// ----- Packages (admin can edit price, limits and availability) -----
-export function savePackage(pkg) {
+// ----- Packages (BIL-02, BIL-03, SET-02): every field editable, new packages, price changes on a date -----
+const PKG_FIELDS = ['name', 'tagline', 'taglineAr', 'price', 'annualPrice', 'transactions', 'overagePrice', 'setupFee', 'setupFeeType', 'users', 'entities', 'linkMethods', 'support', 'consultingHours', 'consultingDiscount', 'features', 'featuresAr', 'popular', 'active'];
+const NUM = ['price', 'annualPrice', 'transactions', 'overagePrice', 'setupFee', 'users', 'entities', 'consultingHours', 'consultingDiscount'];
+export function validatePackage(pkg) {
+  if (!pkg.name?.trim()) throw Object.assign(new Error(''), { key: 'Enter a name.' });
+  if (!pkg.custom && Number(pkg.annualPrice) > Number(pkg.price) * 12) throw Object.assign(new Error(''), { key: 'The annual price cannot be more than 12 × the monthly price ({max}).', vars: { max: Number(pkg.price) * 12 } });
+  NUM.forEach((k) => { if (Number(pkg[k]) < 0) throw Object.assign(new Error(''), { key: 'Values cannot be negative.' }); });
+}
+/** Save now, or from `effectiveDate` (needs a second confirmation in the UI). New packages appear on the pricing page at once. */
+export function savePackage(pkg, { effectiveDate } = {}) {
+  validatePackage(pkg);
+  const clean = Object.fromEntries(PKG_FIELDS.filter((k) => pkg[k] !== undefined).map((k) => [k, NUM.includes(k) ? Number(pkg[k]) : pkg[k]]));
   const overrides = read(PACKAGES_KEY, {});
-  overrides[pkg.id] = { price: Number(pkg.price), transactions: Number(pkg.transactions), users: Number(pkg.users), active: pkg.active !== false };
+  const isNew = !DEFAULT_PACKAGES.some((d) => d.id === pkg.id) && !(overrides._new || []).some((d) => d.id === pkg.id);
+  const before = packages.find((p) => p.id === pkg.id) || null;
+  const today = new Date().toISOString().slice(0, 10);
+  if (isNew) {
+    overrides._new = [...(overrides._new || []), { ...clean, id: pkg.id }];
+  } else if (effectiveDate && effectiveDate > today) {
+    import('./platform').then(({ scheduleChange }) => scheduleChange({ path: `package:${pkg.id}`, value: clean, effectiveDate, label: `Package ${pkg.name}` }));
+    return 'scheduled';
+  } else {
+    overrides[pkg.id] = { ...(overrides[pkg.id] || {}), ...clean };
+  }
   write(PACKAGES_KEY, overrides);
   applyPackageOverrides();
+  import('./audit').then(({ addAudit }) => addAudit({ area: 'Packages', action: isNew ? 'Package created' : 'Package changed', entity: pkg.name, before: before && Object.fromEntries(PKG_FIELDS.map((k) => [k, before[k]])), after: clean }));
   addLog({ type: 'activity', action: 'Package updated', details: '{name}: AED {price} · {tx} transactions · {users} users', vars: { name: pkg.name, price: pkg.price, tx: pkg.transactions, users: pkg.users } });
+  return 'saved';
 }
 export function saveAddon(addon) {
   const overrides = read(PACKAGES_KEY, {});

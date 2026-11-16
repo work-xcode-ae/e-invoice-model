@@ -7,6 +7,6 @@ export default defineConfig({
     port: 5173,
     open: true,
     // Live Qvalia mode: forward to the backend proxy (npm run proxy)
-    proxy: { '/api/qvalia': 'http://localhost:8787' },
+    proxy: { '/api/access-point': 'http://localhost:8787' },
   },
 });

@@ -7,9 +7,10 @@ import { ADMIN_EMAIL, ADMIN_PASSWORD } from './admin';
 import { getPackage, periodPrice, addOns } from '../data/packages';
 import { addLog } from './logs';
 import { seedTickets } from './support';
+import { migrateV8 } from './seed8';
 
 const SEED_KEY = 'mei_seed_v';
-const VERSION = 7;
+const VERSION = 8;
 
 let rngState = 42;
 const rnd = () => { rngState = (rngState * 1664525 + 1013904223) % 4294967296; return rngState / 4294967296; };
@@ -71,10 +72,10 @@ function subscription(pkgId, { daysAgo = 10, months = 1, usedPct = 0.4, addon = 
 }
 
 const DEMO_COMPANIES = [
-  { id: 'seed-xyz', fullName: 'Khalid Rahman', email: 'khalid@xyzco.ae', company: 'XYZ Company', trn: '100111222300003', emirate: 'Abu Dhabi', pkg: 'platinum', usedPct: 0.2, invoices: 60, team: 6 },
+  { id: 'seed-xyz', fullName: 'Khalid Rahman', email: 'khalid@xyzco.ae', company: 'XYZ Company', trn: '100111222300003', emirate: 'Abu Dhabi', pkg: 'premium', usedPct: 0.2, invoices: 60, team: 6 },
   { id: 'seed-noor', fullName: 'Mariam Al Noor', email: 'mariam@alnoor.ae', company: 'Al Noor LLC', trn: '100222333400003', emirate: 'Dubai', pkg: 'basic', usedPct: 0.9, invoices: 25, team: 1 },
-  { id: 'seed-desert', fullName: 'Ravi Menon', email: 'ravi@desertrose.ae', company: 'Desert Rose Interiors', trn: '100333444500003', emirate: 'Sharjah', pkg: 'standard', usedPct: 0.55, invoices: 40, team: 3, daysAgo: 26 },
-  { id: 'seed-falcon', fullName: 'Fatima Saeed', email: 'fatima@falconlog.ae', company: 'Falcon Logistics', trn: '100444555600003', emirate: 'Dubai', pkg: 'standard', usedPct: 0.3, invoices: 45, team: 4, refund: true },
+  { id: 'seed-desert', fullName: 'Ravi Menon', email: 'ravi@desertrose.ae', company: 'Desert Rose Interiors', trn: '100333444500003', emirate: 'Sharjah', pkg: 'pro', usedPct: 0.55, invoices: 40, team: 3, daysAgo: 26 },
+  { id: 'seed-falcon', fullName: 'Fatima Saeed', email: 'fatima@falconlog.ae', company: 'Falcon Logistics', trn: '100444555600003', emirate: 'Dubai', pkg: 'pro', usedPct: 0.3, invoices: 45, team: 4, refund: true },
 ];
 
 
@@ -116,7 +117,7 @@ function paymentHistory(id, pkgId, startAgo, { churnAgo = -1, upgradeTo = null }
       pkg = upgradeTo;
     }
     out.push(pkgPayment(`pi_${id}_${m}`, date, m === startAgo ? 'New' : 'Renewal', pkg));
-    if (rnd() < 0.22 && m > 0) {
+    if (addOns.length && rnd() < 0.22 && m > 0) {
       const a = pick(addOns);
       out.push({ id: `pi_${id}_a${m}`, date: new Date(date.getTime() + 14 * 86400000).toISOString(), type: 'Add-on', packageId: pkg, description: { key: 'Add-on · +{n} transactions', vars: { n: a.transactions } }, total: +(a.price * 1.05).toFixed(2), status: 'Paid' });
     }
@@ -252,7 +253,7 @@ function migrateV4() {
 export function seedAll() {
   const v = read(SEED_KEY, 0);
   if (v >= VERSION) return;
-  if (v >= 3) { if (v === 3) migrateV4(); if (v <= 4) migrateV5(); if (v <= 5) migrateV6(); migrateV7(); write(SEED_KEY, VERSION); return; }
+  if (v >= 3) { if (v === 3) migrateV4(); if (v <= 4) migrateV5(); if (v <= 5) migrateV6(); if (v <= 6) migrateV7(); if (v <= 7) migrateV8(); write(SEED_KEY, VERSION); return; }
   seedDemoAccount();
   const users = getUsers();
 
@@ -313,6 +314,7 @@ export function seedAll() {
   migrateV5();
   migrateV6();
   migrateV7();
+  migrateV8();
   write(SEED_KEY, VERSION);
   addLog({ type: 'activity', action: 'Demo data loaded', details: 'Admin account, 5 companies and invoice history' });
 }

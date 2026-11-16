@@ -13,7 +13,7 @@ export default function AlertBanner() {
   const { user, can } = useAuth();
   const { t, locale } = useLang();
   const act = useAlertAction();
-  const BILLING = ['renew', 'addon', 'packages', 'plan'];
+  const BILLING = ['renew', 'packages', 'plan'];
   const allowed = (action) => action && (!BILLING.includes(action) || can('billing')) && (action !== 'company' || can('company'));
   const [hidden, setHidden] = useState([]);
   if (!user) return null;
@@ -29,7 +29,6 @@ export default function AlertBanner() {
             <span className="ab-text">{msg(t, a, locale)}</span>
             <div className="ab-actions">
               {a.action && BILLING.includes(a.action) && !can('billing') && <span className="ab-owner">{t('Ask the account owner to renew or buy more.')}</span>}
-              {a.action === 'addon' && allowed('renew') && <button className="btn btn-sm btn-outline" onClick={() => act('renew')}>{t('Renew now')}</button>}
               {allowed(a.action) && <button className={`btn btn-sm ${a.level === 'danger' ? 'btn-danger' : 'btn-primary'}`} onClick={() => act(a.action)}>{t(ACTION_LABEL[a.action])}</button>}
               {a.id !== 'locked' && <button className="ab-close" onClick={() => setHidden((h) => [...h, a.id])} aria-label={t('Dismiss')}><X size={16} /></button>}
             </div>

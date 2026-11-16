@@ -239,7 +239,7 @@ const ar4 = {
   '{title} → {n} companies': '{title} ← {n} شركة',
 
   // Invoice monitoring
-  'Real-time view of invoice processing, the sync queue and the Qvalia (White Label) integration.': 'عرض مباشر لمعالجة الفواتير وقائمة المزامنة والتكامل مع Qvalia (White Label).',
+  'Real-time view of invoice processing, the sync queue and the access point integration.': 'عرض مباشر لمعالجة الفواتير وقائمة المزامنة والتكامل مع access point.',
 
   // Customer company: reports
   'What your company invoiced, to whom, and the VAT to declare.': 'ما أصدرته شركتك من فواتير، ولمن، والضريبة الواجب الإقرار بها.',
@@ -419,7 +419,7 @@ const ar4 = {
   "Print": "طباعة",
   "PDF": "PDF",
   "Net": "الصافي",
-  "Qvalia ID": "معرّف Qvalia",
+  "Reference ID": "معرّف the access point",
   "Showing {from}–{to} of {n}": "عرض {from}–{to} من {n}",
   "Rows per page": "عدد الصفوف في الصفحة",
   "{n} per page": "{n} في الصفحة",

@@ -15,6 +15,7 @@ import '@fontsource/ibm-plex-sans-arabic/500.css';
 import '@fontsource/ibm-plex-sans-arabic/600.css';
 import '@fontsource/ibm-plex-sans-arabic/700.css';
 import './index.css';
+import './brd.css';
 import './services/tax'; // apply the admin's VAT settings before anything prices or invoices
 import { seedAll } from './services/seed';
 import { startEngine } from './services/invoices';

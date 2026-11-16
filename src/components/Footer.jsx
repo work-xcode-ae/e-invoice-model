@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Mail, MapPin, Globe } from 'lucide-react';
+import { openCookieSettings } from './Site';
 import Logo from './Logo';
 import { useLang } from '../i18n/LanguageContext';
 
@@ -18,18 +19,28 @@ export default function Footer() {
             <h5>{t('Platform')}</h5>
             <ul>
               <li><Link to="/packages">{t('Packages & Pricing')}</Link></li>
+              <li><Link to="/how-it-works">{t('How it works')}</Link></li>
+              <li><Link to="/check">{t('Are you obligated?')}</Link></li>
               <li><Link to="/requirements">{t('Requirements')}</Link></li>
               <li><Link to="/register">{t('Create Account')}</Link></li>
               <li><Link to="/login">{t('Customer Login')}</Link></li>
             </ul>
           </div>
           <div>
-            <h5>{t('Solutions')}</h5>
+            <h5>{t('Company')}</h5>
             <ul>
-              <li><a href="/#how-it-works">{t('How it works')}</a></li>
-              <li><a href="/#integrations">{t('Integrations & API')}</a></li>
-              <li><a href="/#compliance">{t('Compliance & Security')}</a></li>
-              <li><a href="/#faq">{t('FAQ')}</a></li>
+              <li><Link to="/news">{t('News')}</Link></li>
+              <li><Link to="/faq">{t('FAQ')}</Link></li>
+              <li><Link to="/partners">{t('Become a partner')}</Link></li>
+              <li><Link to="/advertise">{t('Advertise with us')}</Link></li>
+            </ul>
+            <h5 className="mt-2">{t('Legal')}</h5>
+            <ul>
+              <li><Link to="/terms">{t('Terms and Conditions')}</Link></li>
+              <li><Link to="/privacy">{t('Privacy Policy')}</Link></li>
+              <li><Link to="/refund-policy">{t('Refund policy')}</Link></li>
+              <li><Link to="/disclaimer">{t('Disclaimer')}</Link></li>
+              <li><button type="button" className="link-btn" style={{ color: 'inherit', padding: 0 }} onClick={openCookieSettings}>{t('Cookie settings')}</button></li>
             </ul>
           </div>
           <div>

@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { RotateCcw, Paperclip, Loader2, AlertCircle, Lock, XCircle, Ban, Code2, PackageX, Eye, Clock, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLang, errText } from '../../i18n/LanguageContext';
-import { requestRefund, activeRefund, REFUND_REASONS } from '../../services/refunds';
+import { requestRefund, activeRefund, REFUND_REASONS, refundEligibility } from '../../services/refunds';
 import { formatMoney } from '../../data/packages';
 import { fmtDate, fmtDateTime, STATUS_BADGE } from '../../utils/format';
 
-const STEPS = ['Pending', 'Approved', 'Refunded'];
+const STEPS = ['Pending', 'Approved', 'Credit note', 'Refunded'];
 
 function RefundTracker({ r }) {
   const { t, locale } = useLang();
@@ -24,7 +24,7 @@ function RefundTracker({ r }) {
           {STEPS.map((st, i) => (
             <div key={st} className={`st ${reached(st) ? 'done' : ''} ${r.status === 'Processing' && st === 'Refunded' ? 'current' : ''}`}>
               <span className="st-dot">{reached(st) ? <CheckCircle2 size={14} /> : r.status === 'Processing' && st === 'Refunded' ? <Loader2 size={14} className="spin" /> : i + 1}</span>
-              <span>{t(st === 'Pending' ? 'Request received' : st === 'Approved' ? 'Approved' : 'Refunded via Stripe')}</span>
+              <span>{t(st === 'Pending' ? 'Request received' : st === 'Approved' ? 'Approved' : st === 'Credit note' ? 'Credit note issued' : r.status === 'Refund initiated' ? 'Bank transfer back' : 'Refunded to your card')}</span>
             </div>
           ))}
         </div>
@@ -68,6 +68,7 @@ export default function RefundSection() {
   const refunds = user.refunds || [];
   const pending = activeRefund(user);
   const canRequest = user.subscription && !user.subscription.locked && !pending;
+  const elig = user.subscription ? refundEligibility(user) : null;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -91,7 +92,10 @@ export default function RefundSection() {
 
       {open && (
         <form className="edit-panel" onSubmit={submit} noValidate>
-          <div className="alert warn mb-2"><AlertCircle size={18} /> {t('If the refund is approved, your package will be locked: new invoices, API access, renewals and add-ons will be disabled. Invoices already sent stay in your history.')}</div>
+          {elig && (elig.eligible
+            ? <div className="alert success mb-2"><CheckCircle2 size={18} /> {t('You qualify for a full refund of {amount}. {n} day(s) left to ask.', { amount: formatMoney(elig.fullAmount), n: elig.daysLeft })}</div>
+            : <div className="alert warn mb-2"><AlertCircle size={18} /> <span>{t('This request is outside the refund rules, so it needs the manager’s decision:')} {elig.reasons.map((x) => t(x.key, x.vars)).join(' ')}</span></div>)}
+          <div className="alert warn mb-2"><AlertCircle size={18} /> {t('If the refund is approved, a credit note is issued, your package is locked and the money returns by the same payment method within 7 working days.')}</div>
           <div className="form-grid">
             <div className="field full">
               <label>{t('Reason for refund *')}</label>

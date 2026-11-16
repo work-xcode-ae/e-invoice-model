@@ -352,25 +352,25 @@ export function AdminIntegrations() {
 
   return (
     <>
-      <PageTitle title="Integrations" sub="Connection to Qvalia, the Peppol access point and PSP that delivers your invoices." />
+      <PageTitle title="Integrations" sub="Connection to the technical partner (Peppol access point) that delivers invoices." />
       <div className="grid grid-2">
         <div className="card">
-          <h3 className="flex items-center gap-1"><Plug size={18} /> {t('Qvalia Transaction API')}</h3>
+          <h3 className="flex items-center gap-1"><Plug size={18} /> {t('Access point API')}</h3>
           <div className="form-grid mt-2">
             <div className="field full"><label>{t('Mode')}</label>
               <div className="seg-choice two">
                 <button type="button" className={cfg.mode === 'simulation' ? 'on' : ''} onClick={() => saveQvaliaConfig({ mode: 'simulation' })}><b>{t('Simulation')}</b> {t('Realistic responses, nothing is sent')}</button>
-                <button type="button" className={cfg.mode === 'proxy' ? 'on' : ''} onClick={() => saveQvaliaConfig({ mode: 'proxy' })}><b>{t('Live (backend proxy)')}</b> {t('Sends to Qvalia through your server')}</button>
+                <button type="button" className={cfg.mode === 'proxy' ? 'on' : ''} onClick={() => saveQvaliaConfig({ mode: 'proxy' })}><b>{t('Live (backend proxy)')}</b> {t('Sends to the access point through your server')}</button>
               </div>
             </div>
             <div className="field"><label>{t('Environment')}</label>
               <select className="input" value={cfg.environment} onChange={set('environment')}>
-                <option value="test">{t('Test')} · api-test.qvalia.com</option>
-                <option value="production">{t('Production')} · api.qvalia.com</option>
+                <option value="test">{t('Test')} · ap-test.modelfc.ae</option>
+                <option value="production">{t('Production')} · ap.modelfc.ae</option>
               </select></div>
             <div className="field"><label>{t('Account registration number')}</label>
               <input className="input" dir="ltr" placeholder="accountRegNo" value={cfg.accountRegNo} onChange={set('accountRegNo')} />
-              <span className="hint">{t('Issued by Qvalia. Used in /transaction/{accountRegNo}/…')}</span></div>
+              <span className="hint">{t('Issued by the technical partner. Used in /transaction/{accountRegNo}/…')}</span></div>
             <div className="field"><label>{t('Invoice profile')}</label>
               <select className="input" value={cfg.profile} onChange={set('profile')}>
                 {Object.entries(PROFILES).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
@@ -411,9 +411,9 @@ export function AdminIntegrations() {
           <h3>{t('How it works')}</h3>
           <ol className="steps-mini">
             <li>{t('Each invoice (manual, Excel or API) is validated and queued.')}</li>
-            <li>{t('The background process converts it to a UBL invoice in Qvalia’s JSON (or XML) format.')}</li>
+            <li>{t('The background process converts it to a UBL invoice in the access point’s JSON (or XML) format.')}</li>
             <li dir="auto">{t('It is sent with POST /transaction/{accountRegNo}/invoices/outgoing and an Idempotency-Key, so retries never create duplicates.')}</li>
-            <li>{t('200 → Success with Qvalia’s integration ID. 409 → already accepted. 429 / 5xx → retried up to {max} times. 4xx → failed with Qvalia’s message.', { max: MAX_RETRIES })}</li>
+            <li>{t('200 → Success with the access point reference. 409 → already accepted. 429 / 5xx → retried up to {max} times. 4xx → failed with the access point’s message.', { max: MAX_RETRIES })}</li>
           </ol>
           <h4 className="mt-2">{t('Run the backend proxy')}</h4>
           <pre className="code" dir="ltr">{`# in the project folder

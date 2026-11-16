@@ -4,6 +4,7 @@
 // In production this runs on the server; here a timer advances the queue so the flow can be seen live.
 
 import { getUsers, saveUsers, updateUser, read, write, fail } from './api';
+import { consume, withLegacy, usageSummary } from './usage';
 import { addLog } from './logs';
 import { notify } from './notifications';
 import { list, normalizeItem } from './masterData';
@@ -127,12 +128,11 @@ export function packageCheck(user, count = 1) {
   const s = user.subscription;
   if (!s) return { code: 'NO_PACKAGE', key: 'You need an active package to send invoices.' };
   if (s.locked) return { code: 'LOCKED', key: 'Your package is locked after a refund. New invoices are not allowed.' };
-  if (new Date(s.endDate) < new Date()) return { code: 'EXPIRED', key: 'Your package has expired. Renew it to continue.' };
+  if (['Suspended', 'Cancelled', 'Ended'].includes(s.status)) return { code: 'SUSPENDED', key: 'Your subscription is not active. Pay the open invoice or renew to continue.' };
+  if (!s.ledger && new Date(s.endDate) < new Date()) return { code: 'EXPIRED', key: 'Your package has expired. Renew it to continue.' };
   const activeUsers = 1 + (user.teamUsers || []).filter((m) => m.status === 'Active').length;
   if (activeUsers > s.usersLimit) return { code: 'USERS', key: 'You have {n} active users but your package allows {max}. Deactivate users or upgrade.', vars: { n: activeUsers, max: s.usersLimit } };
-  const inflight = (user.invoices || []).filter((i) => ACTIVE_STATUSES.includes(i.status)).length;
-  const left = Math.max(0, s.transactionsLimit - s.transactionsUsed - inflight);
-  if (left < count) return { code: 'LIMIT', key: 'You have reached your transaction limit. {left} left, {count} requested.', vars: { left, count } };
+  // BIL-05: sending never stops at the limit. Documents over the allowance are billed as overage.
   return null;
 }
 
@@ -248,13 +248,13 @@ function haveLock() {
 }
 
 function thresholdNotices(user, sub) {
-  const inflight = (user.invoices || []).filter((i) => ACTIVE_STATUSES.includes(i.status)).length;
-  const left = Math.max(0, sub.transactionsLimit - sub.transactionsUsed - inflight);
-  const pct = sub.transactionsLimit ? left / sub.transactionsLimit : 0;
-  const period = sub.startDate.slice(0, 10);
-  if (left === 0) notify(user.id, { level: 'danger', key: 'You have used all invoices in your package. Renew or buy an add-on to continue.', link: 'addon', dedupe: `lim0-${period}-${sub.transactionsLimit}` });
-  else if (pct <= 0.1) notify(user.id, { level: 'danger', key: 'Only {left} invoices left in your package.', vars: { left }, link: 'addon', dedupe: `lim10-${period}-${sub.transactionsLimit}` });
-  else if (pct <= 0.2) notify(user.id, { level: 'warning', key: '{left} invoices left in your package.', vars: { left }, link: 'addon', dedupe: `lim20-${period}-${sub.transactionsLimit}` });
+  // NTF-02: alerts at 80% and 100% of the allowance. Sending continues after 100% (overage).
+  const u = usageSummary(sub);
+  if (!u || !u.allowance) return;
+  const period = (sub.ledger?.periodStart || sub.startDate).slice(0, 10);
+  const pct = (u.used + (sub.ledger?.overage || 0)) / u.allowance;
+  if (pct >= 1) notify(user.id, { level: 'danger', key: 'You have used all of this month’s documents. Sending continues and extra documents are billed at {price} each.', vars: { price: `AED ${u.overage.price}` }, link: 'usage', dedupe: `use100-${period}` });
+  else if (pct >= 0.8) notify(user.id, { level: 'warning', key: 'You have used 80% of this month’s documents.', link: 'usage', dedupe: `use80-${period}` });
 }
 
 /** Write the Qvalia result back to the invoice (fresh read: the user may have changed meanwhile). */
@@ -271,16 +271,20 @@ function applyResult(userId, invId, res) {
   if (res.ok) {
     next = {
       ...inv, status: 'Success', phaseAt: t, wlInvoiceId: res.integrationId || inv.id, wlResponse: response, lastError: null,
-      history: [...inv.history, { status: 'Success', at: iso(t), note: 'Qvalia accepted the invoice (HTTP {http}). Integration ID {wl}.', vars: { http: res.http, wl: res.integrationId || '—' } }],
+      history: [...inv.history, { status: 'Success', at: iso(t), note: 'The access point accepted the invoice (HTTP {http}). Integration ID {wl}.', vars: { http: res.http, wl: res.integrationId || '—' } }],
     };
-    if (user.subscription) user.subscription = { ...user.subscription, transactionsUsed: user.subscription.transactionsUsed + 1 };
+    if (user.subscription) {
+      user.subscription = user.subscription.ledger
+        ? withLegacy({ ...user.subscription, ledger: consume(user.subscription.ledger, 1) })
+        : { ...user.subscription, transactionsUsed: user.subscription.transactionsUsed + 1 };
+    }
   } else {
     const retryCount = (inv.retryCount || 0) + 1;
     const permanent = !res.retry;
     if (permanent || retryCount >= MAX_RETRIES) {
       next = {
         ...inv, status: 'Failed', phaseAt: t, retryCount, lastError: res.error, wlResponse: response,
-        history: [...inv.history, { status: 'Failed', at: iso(t), note: permanent ? 'Rejected by Qvalia: {err}' : 'Failed after {max} attempts: {err}', vars: { max: MAX_RETRIES, err: res.error } }],
+        history: [...inv.history, { status: 'Failed', at: iso(t), note: permanent ? 'Rejected by the access point: {err}' : 'Failed after {max} attempts: {err}', vars: { max: MAX_RETRIES, err: res.error } }],
       };
     } else {
       const wait = res.body?.metadata?.retryAfter ? Math.max(settings.retryMs, res.body.metadata.retryAfter * 100) : settings.retryMs;
@@ -295,10 +299,10 @@ function applyResult(userId, invId, res) {
 
   const company = user.company?.name;
   if (res.ok) {
-    addLog({ type: 'wl', userId, company, action: 'Qvalia response {http}', vars: { http: res.http }, details: '{id} → {wl}', at: iso(t) });
+    addLog({ type: 'wl', userId, company, action: 'Access point response {http}', vars: { http: res.http }, details: '{id} → {wl}', at: iso(t) });
     if (user.subscription) thresholdNotices(user, user.subscription);
   } else {
-    addLog({ type: 'error', userId, company, action: 'Qvalia error', details: '{id} · {err} · attempt {n}', vars: { id: invId, err: res.error, n: next.retryCount } });
+    addLog({ type: 'error', userId, company, action: 'Access point error', details: '{id} · {err} · attempt {n}', vars: { id: invId, err: res.error, n: next.retryCount } });
     if (next.status === 'Failed') notify(userId, { level: 'danger', key: 'Invoice {id} failed after {max} attempts ({err}).', vars: { id: invId, max: MAX_RETRIES, err: res.error }, link: 'invoices', dedupe: `fail-${invId}-${next.history.length}` });
   }
 }
@@ -327,16 +331,16 @@ export function tick() {
         case 'Queued':
           if (elapsed < settings.phaseMs) return inv;
           after.push(() => addLog({ type: 'transaction', userId: user.id, company: user.company?.name, action: 'Picked by background process', details: '{id} · {queue}', vars: { id: inv.id, queue: inv.queueId } }));
-          return push('Processing', {}, 'Picked by the background process. UBL invoice built for Qvalia.');
+          return push('Processing', {}, 'Picked by the background process. UBL invoice built for the access point.');
         case 'Retrying':
           if (t < (inv.nextAttemptAt || 0)) return inv;
           return push('Processing', {}, 'Retry attempt {n} of {max}.', { n: inv.retryCount, max: MAX_RETRIES });
         case 'Processing': {
           if (elapsed < settings.phaseMs) return inv;
           const cfg = getQvaliaConfig();
-          const next = push('Sent to White Label', {}, 'POST to Qvalia /invoices/outgoing ({format}, Idempotency-Key).', { format: cfg.format.toUpperCase() });
+          const next = push('Sent to White Label', {}, 'POST to the access point /invoices/outgoing ({format}, Idempotency-Key).', { format: cfg.format.toUpperCase() });
           after.push(() => {
-            addLog({ type: 'wl', userId: user.id, company: user.company?.name, action: 'Request sent to Qvalia', details: 'POST /transaction/{acct}/invoices/outgoing · {id} · {format}', vars: { id: inv.id, acct: cfg.accountRegNo || '{accountRegNo}', format: cfg.format.toUpperCase() } });
+            addLog({ type: 'wl', userId: user.id, company: user.company?.name, action: 'Request sent to the access point', details: 'POST /transaction/{acct}/invoices/outgoing · {id} · {format}', vars: { id: inv.id, acct: cfg.accountRegNo || '{accountRegNo}', format: cfg.format.toUpperCase() } });
             const key = `${user.id}:${inv.id}:${next.history.length}`;
             if (inFlight.has(key)) return;
             inFlight.add(key);

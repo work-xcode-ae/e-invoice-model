@@ -64,7 +64,7 @@ export const PROFILES = {
     profileId: 'urn:peppol:bis:billing',
   },
   'peppol-bis-3': {
-    label: 'Peppol BIS Billing 3.0 (as in Qvalia sample)',
+    label: 'Peppol BIS Billing 3.0 (as in the access point sample)',
     customizationId: 'urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0',
     profileId: 'urn:fdc:peppol.eu:2017:poacc:billing:01:1.0',
   },
